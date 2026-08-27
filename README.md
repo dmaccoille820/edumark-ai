@@ -6,8 +6,8 @@ The backend acts as a proxy, handling Google Cloud API calls.
 This project is intended for demonstration and prototyping purposes only.
 It is not intended for use in a production environment.
 
-## Prerequisites
-
+## Prerequisites   
+ 
 To run this application locally, you need:
 
 *   **[Google Cloud SDK / gcloud CLI](https://cloud.google.com/sdk/docs/install)**: Follow the instructions to install the SDK.
