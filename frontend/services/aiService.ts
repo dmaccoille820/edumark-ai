@@ -57,6 +57,10 @@ export const gradeWrittenAnswer = async (
       },
     });
 
+    if (!response.text) {
+      throw new Error('No text returned from the grading model.');
+    }
+
     let jsonStr = response.text.trim();
     if (jsonStr.startsWith('```')) {
       jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/```$/, '').trim();
@@ -164,6 +168,10 @@ export const generateAssessmentFromPdfs = async (
         temperature: 0.2,
       },
     });
+
+    if (!response.text) {
+      throw new Error('No text returned from the assessment generation model.');
+    }
 
     let jsonStr = response.text.trim();
     console.log("Raw response from Gemini:", jsonStr);
