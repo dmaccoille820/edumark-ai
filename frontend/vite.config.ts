@@ -11,6 +11,7 @@ export default defineConfig(({ mode }) => {
       },
       server: {
         proxy: {
+          '/api': 'http://localhost:5000',
           //Target your Node.js backend
           '/api-proxy': 'http://localhost:5000',
           '/ws-proxy': {target: 'ws://localhost:5000', ws: true},

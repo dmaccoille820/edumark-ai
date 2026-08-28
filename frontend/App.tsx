@@ -1,6 +1,5 @@
 import React, { useState, useCallback } from 'react';
 import { User, Assessment, Submission, AppState, AnswerFeedback } from './types';
-import { MOCK_SUBMISSIONS } from './mockDb';
 import { gradeWrittenAnswer } from './services/aiService';
 
 import { Login } from './components/Login';
@@ -9,6 +8,7 @@ import { TeacherDashboard } from './components/TeacherDashboard';
 import { AssessmentView } from './components/AssessmentView';
 import { ResultsView } from './components/ResultsView';
 import { GradingOverlay } from './components/GradingOverlay';
+import { clearSession, login, saveSubmission } from './services/api';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('login');
@@ -16,7 +16,8 @@ const App: React.FC = () => {
   const [currentAssessment, setCurrentAssessment] = useState<Assessment | null>(null);
   const [currentSubmission, setCurrentSubmission] = useState<Submission | null>(null);
 
-  const handleLogin = (user: User) => {
+  const handleLogin = async (email: string, password: string) => {
+    const user = await login(email, password);
     setCurrentUser(user);
     if (user.role === 'teacher') {
       setAppState('teacher-dashboard');
@@ -27,6 +28,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    clearSession();
     setCurrentAssessment(null);
     setCurrentSubmission(null);
     setAppState('login');
@@ -103,10 +105,8 @@ const App: React.FC = () => {
       submittedAt: new Date().toISOString(),
     };
 
-    // Save to mock DB
-    MOCK_SUBMISSIONS.push(newSubmission);
-    
-    setCurrentSubmission(newSubmission);
+    const savedSubmission = await saveSubmission(newSubmission);
+    setCurrentSubmission(savedSubmission);
     setAppState('results');
   }, [currentUser, currentAssessment]);
 

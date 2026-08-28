@@ -5,6 +5,7 @@ export interface User {
   role: 'student' | 'teacher';
   examNumber?: string; // For students
   teacherId?: string; // For teachers
+  accessId?: string;
 }
 
 export interface BilingualText {

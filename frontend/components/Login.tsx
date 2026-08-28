@@ -1,31 +1,28 @@
 import React, { useState } from 'react';
 import { BookOpen, LogIn } from 'lucide-react';
-import { MOCK_USERS } from '../mockDb';
 import { User } from '../types';
 
 interface LoginProps {
-  onLogin: (user: User) => void;
+  onLogin: (email: string, password: string) => Promise<void>;
 }
 
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [email, setEmail] = useState('');
-  const [accessId, setAccessId] = useState('');
+  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const user = MOCK_USERS.find(
-      (u) => 
-        u.email.toLowerCase() === email.toLowerCase() && 
-        (u.examNumber === accessId || u.teacherId === accessId)
-    );
-
-    if (user) {
-      onLogin(user);
-    } else {
-      setError('Invalid email or access ID. Please try again.');
+    if (!/^\d{4}$/.test(password)) {
+      setError('Password must be exactly four digits.');
+      return;
+    }
+    try {
+      await onLogin(email, password);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : 'Unable to log in.');
     }
   };
 
@@ -42,6 +39,24 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
+            <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
+              Password (4 digits)
+            </label>
+            <input
+              id="password"
+              type="password"
+              inputMode="numeric"
+              pattern="[0-9]{4}"
+              maxLength={4}
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors"
+              placeholder="1234"
+            />
+          </div>
+
+          <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
               Email Address
             </label>
@@ -53,21 +68,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               onChange={(e) => setEmail(e.target.value)}
               className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors"
               placeholder="user@school.edu"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="accessId" className="block text-sm font-medium text-slate-700 mb-1">
-              Exam Number / Teacher ID
-            </label>
-            <input
-              id="accessId"
-              type="text"
-              required
-              value={accessId}
-              onChange={(e) => setAccessId(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors"
-              placeholder="EXAM123 or TEACH999"
             />
           </div>
 
@@ -88,8 +88,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         
         <div className="mt-6 text-xs text-slate-400 text-center space-y-1">
           <p className="font-semibold">Demo Credentials:</p>
-          <p>Student: student@school.edu / EXAM123</p>
-          <p>Teacher: teacher@school.edu / TEACH999</p>
+          <p>Student: student@school.edu / 1234</p>
+          <p>Teacher: teacher@school.edu / 9999</p>
         </div>
       </div>
     </div>

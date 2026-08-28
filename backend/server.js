@@ -10,6 +10,8 @@ import { GoogleAuth } from 'google-auth-library';
 import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
+import { createToken, requireAuth } from './auth.js';
+import { findUser, listSubmissions, saveSubmission } from './database.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "7mb"}));
@@ -48,8 +50,47 @@ const proxyLimiter = rateLimit({
       message: 'You have exceed the request limit, please try again later.'
     },
 });
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again later.' },
+});
 // Apply the rate limiter to the /api-proxy route before the main proxy logic
 app.use('/api-proxy', proxyLimiter);
+
+app.post('/api/auth/login', loginLimiter, (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  if (!/^\d{4}$/.test(password)) {
+    return res.status(400).json({ error: 'Password must be exactly four digits.' });
+  }
+
+  const user = findUser(email, password);
+  if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
+  res.json({ token: createToken(user), user });
+});
+
+app.post('/api/submissions', requireAuth, (req, res) => {
+  if (req.user.role !== 'student' || req.user.sub !== req.body?.studentId) {
+    return res.status(403).json({ error: 'Students may only submit their own assessments.' });
+  }
+  const submission = req.body;
+  if (!submission.id || !submission.assessmentId || !submission.answers ||
+      !['pending', 'graded'].includes(submission.status) ||
+      typeof submission.submittedAt !== 'string') {
+    return res.status(400).json({ error: 'Invalid submission.' });
+  }
+  saveSubmission(submission);
+  res.status(201).json(submission);
+});
+
+app.get('/api/submissions', requireAuth, (req, res) => {
+  const submissions = listSubmissions();
+  if (req.user.role === 'teacher') return res.json(submissions);
+  res.json(submissions.filter((submission) => submission.studentId === req.user.sub));
+});
 
 const API_CLIENT_MAP = [
  {

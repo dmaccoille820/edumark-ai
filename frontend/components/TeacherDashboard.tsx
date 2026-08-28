@@ -1,8 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Users, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
-import { MOCK_USERS, MOCK_ASSESSMENTS, MOCK_SUBMISSIONS } from '../mockDb';
+import { MOCK_USERS, MOCK_ASSESSMENTS } from '../mockDb';
 import { generateAssessmentFromPdfs } from '../services/aiService';
+import { getSubmissions } from '../services/api';
 
 interface TeacherDashboardProps {
   teacher: User;
@@ -14,6 +15,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorLog, setErrorLog] = useState<string>('');
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+
+  useEffect(() => {
+    getSubmissions().then(setSubmissions).catch((error) => setErrorLog(error.message));
+  }, []);
 
   // Form state for new assessment
   const [titleEn, setTitleEn] = useState('');
@@ -38,7 +44,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
     const students = MOCK_USERS.filter(u => u.role === 'student');
     
     return students.map(student => {
-      const subs = MOCK_SUBMISSIONS.filter(s => s.studentId === student.id);
+      const subs = submissions.filter(s => s.studentId === student.id);
       let totalPercentageSum = 0;
       
       subs.forEach(sub => {
@@ -55,12 +61,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
         averagePercentage: average
       };
     });
-  }, [assessmentMaxMarks]);
+  }, [assessmentMaxMarks, submissions]);
 
   const handleExportCSV = () => {
     const headers = ['Student Name', 'Email', 'Exam Number', 'Assessment', 'Score (%)', 'Date Submitted'];
     
-    const rows = MOCK_SUBMISSIONS.map(sub => {
+    const rows = submissions.map(sub => {
       const student = MOCK_USERS.find(u => u.id === sub.studentId);
       const assessment = assessments.find(a => a.id === sub.assessmentId);
       
@@ -356,14 +362,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {MOCK_SUBMISSIONS.length === 0 ? (
+                {submissions.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-8 text-center text-slate-500 italic">
                       No submissions recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  [...MOCK_SUBMISSIONS].reverse().map((sub) => {
+                  [...submissions].reverse().map((sub) => {
                     const student = MOCK_USERS.find(u => u.id === sub.studentId);
                     const assessment = assessments.find(a => a.id === sub.assessmentId);
                     const maxMarks = assessment ? assessmentMaxMarks[assessment.id] : 1;

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { FileText, Clock, CheckCircle, LogOut } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
-import { MOCK_ASSESSMENTS, MOCK_SUBMISSIONS } from '../mockDb';
+import { MOCK_ASSESSMENTS } from '../mockDb';
+import { getSubmissions } from '../services/api';
 
 interface DashboardProps {
   student: User;
@@ -16,8 +17,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewResults,
   onLogout,
 }) => {
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+
+  useEffect(() => {
+    getSubmissions().then(setSubmissions).catch(() => setSubmissions([]));
+  }, []);
+
   // Find which assessments the student has already taken
-  const studentSubmissions = MOCK_SUBMISSIONS.filter((s) => s.studentId === student.id);
+  const studentSubmissions = submissions.filter((s) => s.studentId === student.id);
   const completedAssessmentIds = new Set(studentSubmissions.map((s) => s.assessmentId));
 
   return (
