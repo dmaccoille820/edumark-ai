@@ -179,14 +179,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       };
 
       // Save to database
-      const res = await fetch('/api-proxy/assessments', {
+      const token = localStorage.getItem('edumark.auth.token');
+      const res = await fetch('/api/assessments', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(newAssessment)
       });
 
       if (!res.ok) {
-        throw new Error('Failed to save assessment to the database.');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(`Failed to save assessment (${res.status}): ${errData.error || res.statusText}`);
       }
 
       const savedAssessment = await res.json();
