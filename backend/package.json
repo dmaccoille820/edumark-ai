@@ -7,9 +7,11 @@
   "main": "server.js",
   "scripts": {
     "start": "node --env-file=.env.local server.js",
-    "dev": "nodemon --env-file=.env.local server.js"
+    "dev": "nodemon --env-file=.env.local server.js",
+    "test": "node --test"
   },
   "dependencies": {
+    "better-sqlite3": "^12.4.1",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "express-rate-limit": "^7.5.0",

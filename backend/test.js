@@ -9,7 +9,7 @@ import {
   createAssessment,
   getSubmissions,
   createSubmission
-} from './db.js';
+} from './database.js';
 
 // Simple Assert Helper
 const assert = (condition, message) => {
@@ -68,7 +68,7 @@ const runTests = async () => {
       description: { en: 'Unit testing assessment creation', ga: 'Measúnú tástála aonaid' },
       questions: [
         {
-          id: 'test_q1',
+          id: `test_q_${Date.now()}`,
           type: 'written',
           text: { en: 'Explain test parameters', ga: 'Mínigh paraiméadair tástála' },
           maxMarks: 5,
@@ -120,17 +120,23 @@ const runTests = async () => {
 
   server.listen(testPort, '127.0.0.1', async () => {
     try {
+      let token = '';
+
       // Helper function to make HTTP requests
-      const request = (method, path, body = null) => {
+      const request = (method, path, body = null, useAuth = true) => {
         return new Promise((resolve, reject) => {
+          const headers = {
+            'Content-Type': 'application/json',
+          };
+          if (useAuth && token) {
+            headers['Authorization'] = `Bearer ${token}`;
+          }
           const req = http.request({
             hostname: '127.0.0.1',
             port: testPort,
             path,
             method,
-            headers: {
-              'Content-Type': 'application/json',
-            }
+            headers
           }, (res) => {
             let data = '';
             res.on('data', chunk => data += chunk);
@@ -155,15 +161,16 @@ const runTests = async () => {
       console.log('  Testing Auth Endpoints...');
       const loginSuccess = await request('POST', '/api/auth/login', {
         email: 'student@school.edu',
-        accessId: 'EXAM123'
-      });
+        password: 'EXAM123'
+      }, false);
       assert(loginSuccess.status === 200, 'Valid login should return 200');
-      assert(loginSuccess.body.name === 'Alex Johnson', 'Login response returns student profile');
+      assert(loginSuccess.body.user.name === 'Alex Johnson', 'Login response returns student profile');
+      token = loginSuccess.body.token;
 
       const loginFailure = await request('POST', '/api/auth/login', {
         email: 'student@school.edu',
-        accessId: 'WRONG'
-      });
+        password: 'WRONG'
+      }, false);
       assert(loginFailure.status === 401, 'Invalid login should return 401');
 
       // 3.2 User Listing Endpoint
@@ -198,12 +205,14 @@ const runTests = async () => {
       const testSubIdAPI = `api_sub_${Date.now()}`;
       const newApiSub = {
         id: testSubIdAPI,
-        studentId: 's2',
+        studentId: 's1',
         assessmentId: 'a1',
-        answers: { 'q1': '1' }
+        answers: { 'q1': '1' },
+        status: 'graded',
+        submittedAt: new Date().toISOString()
       };
       const createSubRes = await request('POST', '/api/submissions', newApiSub);
-      assert(createSubRes.status === 200, 'POST /api/submissions should submit successfully');
+      assert(createSubRes.status === 201, 'POST /api/submissions should submit successfully');
       assert(createSubRes.body.id === testSubIdAPI, 'Returned created submission matches');
 
       console.log('\n  ✓ All API routing tests passed successfully!');

@@ -19,6 +19,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onViewResults,
   onLogout,
 }) => {
+
   // Find which assessments the student has already taken
   const studentSubmissions = submissions.filter((s) => s.studentId === student.id);
   const completedAssessmentIds = new Set(studentSubmissions.map((s) => s.assessmentId));

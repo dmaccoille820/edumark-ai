@@ -1,7 +1,9 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Users, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
+
 import { generateAssessmentFromPdfs } from '../services/aiService';
+import { getSubmissions } from '../services/api';
 
 interface TeacherDashboardProps {
   teacher: User;
@@ -19,10 +21,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   onLogout,
 }) => {
   const [assessments, setAssessments] = useState<Assessment[]>(initialAssessments);
-  const [submissions] = useState<Submission[]>(initialSubmissions);
+  const [submissions, setSubmissions] = useState<Submission[]>(initialSubmissions);
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorLog, setErrorLog] = useState<string>('');
+
+  useEffect(() => {
+    getSubmissions().then(setSubmissions).catch((error) => setErrorLog(error.message));
+  }, []);
 
   // Form state for new assessment
   const [titleEn, setTitleEn] = useState('');
@@ -179,7 +185,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-600 font-medium">
-              {teacher.name} ({teacher.teacherId})
+              {teacher.name} ({teacher.accessId || teacher.teacherId})
             </span>
             <button
               onClick={onLogout}

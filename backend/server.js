@@ -10,15 +10,8 @@ import { GoogleAuth } from 'google-auth-library';
 import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
-import {
-  initDb,
-  getUser,
-  getUsers,
-  getAssessments,
-  createAssessment,
-  getSubmissions,
-  createSubmission
-} from './db.js';
+import { createToken, requireAuth } from './auth.js';
+import { initDb, findUser, listUsers, getAssessments, createAssessment, listSubmissions, saveSubmission, usePostgreSQL } from './database.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "7mb"}));
@@ -60,8 +53,49 @@ const proxyLimiter = rateLimit({
       message: 'You have exceed the request limit, please try again later.'
     },
 });
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { error: 'Too many login attempts. Try again later.' },
+});
 // Apply the rate limiter to the /api-proxy route before the main proxy logic
 app.use('/api-proxy', proxyLimiter);
+
+app.post('/api/auth/login', loginLimiter, async (req, res) => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  
+  const isFourDigit = /^\d{4}$/.test(password);
+  if (!email || (!isFourDigit && !usePostgreSQL)) {
+    return res.status(400).json({ error: 'Email is required and password must be exactly four digits.' });
+  }
+
+  const user = await findUser(email, password);
+  if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
+  res.json({ token: createToken(user), user });
+});
+
+app.post('/api/submissions', requireAuth, async (req, res) => {
+  if (req.user.role !== 'student' || req.user.sub !== req.body?.studentId) {
+    return res.status(403).json({ error: 'Students may only submit their own assessments.' });
+  }
+  const submission = req.body;
+  if (!submission.id || !submission.assessmentId || !submission.answers ||
+      !['pending', 'graded'].includes(submission.status) ||
+      typeof submission.submittedAt !== 'string') {
+    return res.status(400).json({ error: 'Invalid submission.' });
+  }
+  await saveSubmission(submission);
+  res.status(201).json(submission);
+});
+
+app.get('/api/submissions', requireAuth, async (req, res) => {
+  const submissions = await listSubmissions();
+  if (req.user.role === 'teacher') return res.json(submissions);
+  res.json(submissions.filter((submission) => submission.studentId === req.user.sub));
+});
 
 const API_CLIENT_MAP = [
  {
@@ -220,30 +254,11 @@ app.use((req, res, next) => {
 
 // --- Database backed API endpoints ---
 
-// Authentication Endpoint
-app.post('/api/auth/login', async (req, res) => {
-  const { email, accessId } = req.body;
-  if (!email || !accessId) {
-    return res.status(400).json({ error: 'Email and accessId are required.' });
-  }
-  try {
-    const user = await getUser(email, accessId);
-    if (user) {
-      return res.json(user);
-    } else {
-      return res.status(401).json({ error: 'Invalid credentials. Please try again.' });
-    }
-  } catch (err) {
-    console.error('Login error:', err);
-    return res.status(500).json({ error: 'Internal server error during login.' });
-  }
-});
-
 // Fetch users listing (optional role query param)
-app.get('/api/users', async (req, res) => {
+app.get('/api/users', requireAuth, async (req, res) => {
   const role = req.query.role || null;
   try {
-    const list = await getUsers(role);
+    const list = await listUsers(role);
     return res.json(list);
   } catch (err) {
     console.error('Fetch users error:', err);
@@ -252,7 +267,7 @@ app.get('/api/users', async (req, res) => {
 });
 
 // Fetch all assessments (including questions)
-app.get('/api/assessments', async (req, res) => {
+app.get('/api/assessments', requireAuth, async (req, res) => {
   try {
     const list = await getAssessments();
     return res.json(list);
@@ -263,7 +278,7 @@ app.get('/api/assessments', async (req, res) => {
 });
 
 // Save newly generated assessment
-app.post('/api/assessments', async (req, res) => {
+app.post('/api/assessments', requireAuth, async (req, res) => {
   const assessment = req.body;
   if (!assessment || !assessment.id || !assessment.questions) {
     return res.status(400).json({ error: 'Invalid assessment payload.' });
@@ -274,33 +289,6 @@ app.post('/api/assessments', async (req, res) => {
   } catch (err) {
     console.error('Create assessment error:', err);
     return res.status(500).json({ error: 'Internal server error creating assessment.' });
-  }
-});
-
-// Fetch submissions (optional studentId query param)
-app.get('/api/submissions', async (req, res) => {
-  const studentId = req.query.studentId || null;
-  try {
-    const list = await getSubmissions(studentId);
-    return res.json(list);
-  } catch (err) {
-    console.error('Fetch submissions error:', err);
-    return res.status(500).json({ error: 'Internal server error fetching submissions.' });
-  }
-});
-
-// Record student submission
-app.post('/api/submissions', async (req, res) => {
-  const submission = req.body;
-  if (!submission || !submission.id || !submission.studentId || !submission.assessmentId) {
-    return res.status(400).json({ error: 'Invalid submission payload.' });
-  }
-  try {
-    const created = await createSubmission(submission);
-    return res.json(created);
-  } catch (err) {
-    console.error('Create submission error:', err);
-    return res.status(500).json({ error: 'Internal server error creating submission.' });
   }
 });
 

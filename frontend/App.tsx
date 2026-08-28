@@ -8,6 +8,7 @@ import { TeacherDashboard } from './components/TeacherDashboard';
 import { AssessmentView } from './components/AssessmentView';
 import { ResultsView } from './components/ResultsView';
 import { GradingOverlay } from './components/GradingOverlay';
+import { clearSession, login, saveSubmission, getAssessments, getStudents, getSubmissions } from './services/api';
 
 const App: React.FC = () => {
   const [appState, setAppState] = useState<AppState>('login');
@@ -19,7 +20,7 @@ const App: React.FC = () => {
   const [assessments, setAssessments] = useState<Assessment[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [students, setStudents] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     if (!currentUser) {
@@ -32,27 +33,15 @@ const App: React.FC = () => {
     const fetchData = async () => {
       setIsLoading(true);
       try {
-        const assRes = await fetch('/api-proxy/assessments');
-        if (assRes.ok) {
-          const assData = await assRes.json();
-          setAssessments(assData);
-        }
+        const assData = await getAssessments();
+        setAssessments(assData);
 
-        const subUrl = currentUser.role === 'student'
-          ? `/api-proxy/submissions?studentId=${currentUser.id}`
-          : '/api-proxy/submissions';
-        const subRes = await fetch(subUrl);
-        if (subRes.ok) {
-          const subData = await subRes.json();
-          setSubmissions(subData);
-        }
+        const subData = await getSubmissions();
+        setSubmissions(subData);
 
         if (currentUser.role === 'teacher') {
-          const uRes = await fetch('/api-proxy/users?role=student');
-          if (uRes.ok) {
-            const uData = await uRes.json();
-            setStudents(uData);
-          }
+          const uData = await getStudents();
+          setStudents(uData);
         }
       } catch (err) {
         console.error('Error fetching data from database API:', err);
@@ -64,7 +53,8 @@ const App: React.FC = () => {
     fetchData();
   }, [currentUser]);
 
-  const handleLogin = (user: User) => {
+  const handleLogin = async (email: string, password: string) => {
+    const user = await login(email, password);
     setCurrentUser(user);
     if (user.role === 'teacher') {
       setAppState('teacher-dashboard');
@@ -75,6 +65,7 @@ const App: React.FC = () => {
 
   const handleLogout = () => {
     setCurrentUser(null);
+    clearSession();
     setCurrentAssessment(null);
     setCurrentSubmission(null);
     setAppState('login');
@@ -150,24 +141,13 @@ const App: React.FC = () => {
     };
 
     try {
-      // Save to Database via API
-      const res = await fetch('/api-proxy/submissions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newSubmission)
-      });
-      if (!res.ok) {
-        throw new Error('Failed to save submission to the database.');
-      }
-      const savedSubmission = await res.json();
+      const savedSubmission = await saveSubmission(newSubmission);
       setSubmissions(prev => [savedSubmission, ...prev]);
       setCurrentSubmission(savedSubmission);
     } catch (err) {
       console.error('Error submitting assessment:', err);
-      // Fallback locally
       setCurrentSubmission(newSubmission);
     }
-    
     setAppState('results');
   }, [currentUser, currentAssessment]);
 
