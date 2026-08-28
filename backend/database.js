@@ -210,9 +210,14 @@ export async function initDb() {
         console.log('[Database] Schema initialised / verified.');
       }
     } catch (err) {
-      console.error('[Database] Failed to connect to Neon PostgreSQL, falling back to SQLite.', err.message);
-      usePostgreSQL = false;
-      initializeSQLite();
+      console.error('[Database] Failed to connect to Neon PostgreSQL:', err.message);
+      if (process.env.VERCEL) {
+        console.error('[Database] Running on Vercel: SQLite fallback disabled. Keeping PostgreSQL active.');
+      } else {
+        console.log('[Database] Falling back to SQLite.');
+        usePostgreSQL = false;
+        initializeSQLite();
+      }
     }
   } else {
     console.log('[Database] Using SQLite database.');
