@@ -222,38 +222,133 @@ export async function initDb() {
 // Database Operations
 
 export function findUser(email, password) {
+  const normalizedEmail = email.trim().toLowerCase();
   
   if (usePostgreSQL) {
+    // 1. Try to find the user first
     return pool.query(
-      `SELECT * FROM users 
-       WHERE LOWER(email) = LOWER($1) 
-       AND (exam_number = $2 OR teacher_id = $2)`,
-      [email, password]
+      `SELECT * FROM users WHERE LOWER(email) = $1`,
+      [normalizedEmail]
     ).then(res => {
       if (res.rows.length > 0) {
+        // User exists! Verify password
         const u = res.rows[0];
-        return {
-          id: u.id,
-          email: u.email,
-          name: u.name,
-          role: u.role,
-          accessId: u.exam_number || u.teacher_id || ''
-        };
+        const storedPassword = u.role === 'student' ? u.exam_number : u.teacher_id;
+        if (storedPassword === password) {
+          return {
+            id: u.id,
+            email: u.email,
+            name: u.name,
+            role: u.role,
+            accessId: storedPassword
+          };
+        }
+        return undefined;
       }
+      
+      // User does NOT exist! Can we register them dynamically?
+      const isFourDigit = /^\d{4}$/.test(password);
+      if (password === 'TEACH123') {
+        // Register as a new teacher!
+        const newId = crypto.randomUUID();
+        const prefix = email.split('@')[0];
+        const name = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+        
+        return pool.query(
+          `INSERT INTO users (id, email, name, role, exam_number, teacher_id)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [newId, normalizedEmail, name, 'teacher', null, 'TEACH123']
+        ).then(() => {
+          return {
+            id: newId,
+            email: normalizedEmail,
+            name: name,
+            role: 'teacher',
+            accessId: 'TEACH123'
+          };
+        });
+      } else if (isFourDigit) {
+        // Register as a new student!
+        const newId = crypto.randomUUID();
+        const prefix = email.split('@')[0];
+        const name = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+        
+        return pool.query(
+          `INSERT INTO users (id, email, name, role, exam_number, teacher_id)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [newId, normalizedEmail, name, 'student', password, null]
+        ).then(() => {
+          return {
+            id: newId,
+            email: normalizedEmail,
+            name: name,
+            role: 'student',
+            accessId: password
+          };
+        });
+      }
+      
       return undefined;
-    }).catch(err => {
-      console.error('[Database] findUser error:', err);
-      throw err;
     });
+    
   } else {
+    // SQLite mode - synchronous
     const user = db.prepare(`
       SELECT id, email, name, role, access_id AS accessId, password
       FROM users
-      WHERE email = ?
-    `).get(email);
-    if (!user || !verifyExamNumber(password, user.password)) return undefined;
-    const { password: _password, ...safeUser } = user;
-    return safeUser;
+      WHERE LOWER(email) = LOWER(?)
+    `).get(normalizedEmail);
+    
+    if (user) {
+      // User exists! Verify password
+      if (!verifyExamNumber(password, user.password)) return undefined;
+      const { password: _password, ...safeUser } = user;
+      return safeUser;
+    }
+    
+    // User does NOT exist! Can we register them dynamically?
+    const isFourDigit = /^\d{4}$/.test(password);
+    if (password === 'TEACH123') {
+      // Register as a new teacher!
+      const newId = crypto.randomUUID();
+      const prefix = email.split('@')[0];
+      const name = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      const hashedPassword = hashExamNumber('TEACH123');
+      
+      db.prepare(`
+        INSERT INTO users (id, email, name, role, access_id, password)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(newId, normalizedEmail, name, 'teacher', 'TEACH123', hashedPassword);
+      
+      return {
+        id: newId,
+        email: normalizedEmail,
+        name: name,
+        role: 'teacher',
+        accessId: 'TEACH123'
+      };
+    } else if (isFourDigit) {
+      // Register as a new student!
+      const newId = crypto.randomUUID();
+      const prefix = email.split('@')[0];
+      const name = prefix.charAt(0).toUpperCase() + prefix.slice(1);
+      const hashedPassword = hashExamNumber(password);
+      
+      db.prepare(`
+        INSERT INTO users (id, email, name, role, access_id, password)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `).run(newId, normalizedEmail, name, 'student', password, hashedPassword);
+      
+      return {
+        id: newId,
+        email: normalizedEmail,
+        name: name,
+        role: 'student',
+        accessId: password
+      };
+    }
+    
+    return undefined;
   }
 }
 

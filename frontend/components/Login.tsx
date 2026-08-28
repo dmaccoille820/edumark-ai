@@ -34,21 +34,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
-              Password (4 digits)
-            </label>
-            <input
-              id="password"
-              type="password"
-              required
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors"
-              placeholder="1234"
-            />
-          </div>
-
-          <div>
             <label htmlFor="email" className="block text-sm font-medium text-slate-700 mb-1">
               Email Address
             </label>
@@ -63,6 +48,21 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             />
           </div>
 
+          <div>
+            <label htmlFor="password" className="block text-sm font-medium text-slate-700 mb-1">
+              Password (4 digits)
+            </label>
+            <input
+              id="password"
+              type="password"
+              required
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full px-4 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors"
+              placeholder="1234"
+            />
+          </div>
+
           {error && (
             <div className="p-3 bg-danger/10 text-danger text-sm rounded-lg">
               {error}
@@ -71,7 +71,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           <button
             type="submit"
-            className="w-full bg-primary hover:bg-blue-700 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors"
+            className="w-full bg-primary hover:bg-green-800 text-white font-medium py-2.5 rounded-lg flex items-center justify-center gap-2 transition-colors"
           >
             <LogIn className="w-4 h-4" />
             Access Portal

@@ -166,7 +166,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                         <Bot className="w-3.5 h-3.5" />
                         {lang === 'en' ? 'AI Examiner Feedback' : 'Aiseolas ón Scrúdaitheoir AI'}
                       </span>
-                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 text-slate-700 text-sm leading-relaxed">
+                      <div className="p-4 bg-green-50 rounded-lg border border-green-100 text-slate-700 text-sm leading-relaxed">
                         {lang === 'en' ? feedback.commentEn : feedback.commentGa}
                       </div>
                       

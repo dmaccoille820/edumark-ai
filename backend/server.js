@@ -67,14 +67,18 @@ app.post('/api/auth/login', loginLimiter, async (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
   
-  const isFourDigit = /^\d{4}$/.test(password);
-  if (!email || (!isFourDigit && !usePostgreSQL)) {
-    return res.status(400).json({ error: 'Email is required and password must be exactly four digits.' });
+  if (!email || !password) {
+    return res.status(400).json({ error: 'Email and password are required.' });
   }
 
-  const user = await findUser(email, password);
-  if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
-  res.json({ token: createToken(user), user });
+  try {
+    const user = await findUser(email, password);
+    if (!user) return res.status(401).json({ error: 'Invalid email or password.' });
+    res.json({ token: createToken(user), user });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error during login.' });
+  }
 });
 
 app.post('/api/submissions', requireAuth, async (req, res) => {

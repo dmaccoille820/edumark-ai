@@ -165,7 +165,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-primary hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+              className="bg-primary hover:bg-green-800 text-white font-medium px-6 py-3 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <>{headerLang === 'en' ? 'Processing...' : 'Ag Próiseáil...'}</>

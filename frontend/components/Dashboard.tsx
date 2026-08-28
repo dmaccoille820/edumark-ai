@@ -93,14 +93,14 @@ export const Dashboard: React.FC<DashboardProps> = ({
                   {isCompleted && submission ? (
                     <button
                       onClick={() => onViewResults(submission)}
-                      className="text-sm font-medium text-primary hover:text-blue-700 transition-colors"
+                      className="text-sm font-medium text-primary hover:text-green-800 transition-colors"
                     >
                       View Results
                     </button>
                   ) : (
                     <button
                       onClick={() => onStartAssessment(assessment)}
-                      className="bg-primary hover:bg-blue-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+                      className="bg-primary hover:bg-green-800 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                     >
                       Start Assessment
                     </button>
