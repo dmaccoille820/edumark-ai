@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Users, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
 
-import { generateAssessmentFromPdfs } from '../services/aiService';
+import { generateAssessmentFromPdfs, generateAssessmentFromFactFiles } from '../services/aiService';
 import { getSubmissions } from '../services/api';
 
 interface TeacherDashboardProps {
@@ -25,6 +25,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorLog, setErrorLog] = useState<string>('');
+  const [assessmentSource, setAssessmentSource] = useState<'exam' | 'fact_file'>('exam');
 
   useEffect(() => {
     getSubmissions().then(setSubmissions).catch((error) => setErrorLog(error.message));
@@ -147,19 +148,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     e.preventDefault();
     setErrorLog('');
 
-    if (!enPdf || !gaPdf || !msPdf) {
+    if (assessmentSource === 'exam' && (!enPdf || !gaPdf || !msPdf)) {
       setErrorLog('Validation Error: Please upload all three required PDF documents.');
+      return;
+    }
+    if (assessmentSource === 'fact_file' && (!enPdf || !gaPdf)) {
+      setErrorLog('Validation Error: Please upload both English and Irish Fact File PDFs.');
       return;
     }
 
     setIsProcessing(true);
 
     try {
-      const enBase64 = await fileToBase64(enPdf);
-      const gaBase64 = await fileToBase64(gaPdf);
-      const msBase64 = await fileToBase64(msPdf);
-
-      const questions = await generateAssessmentFromPdfs(enBase64, gaBase64, msBase64);
+      const enBase64 = await fileToBase64(enPdf!);
+      const gaBase64 = await fileToBase64(gaPdf!);
+      
+      let questions;
+      if (assessmentSource === 'exam') {
+        const msBase64 = await fileToBase64(msPdf!);
+        questions = await generateAssessmentFromPdfs(enBase64, gaBase64, msBase64);
+      } else {
+        questions = await generateAssessmentFromFactFiles(enBase64, gaBase64);
+      }
 
       const newAssessment: Assessment = {
         id: `a_${Date.now()}`,
@@ -191,6 +201,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setEnPdf(null);
       setGaPdf(null);
       setMsPdf(null);
+      setAssessmentSource('exam');
       
       alert('Assessment successfully generated and added to the database!');
     } catch (err: any) {
@@ -253,10 +264,39 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {/* Create Assessment Form */}
         {isCreating && (
           <section className="bg-white rounded-xl shadow-sm border border-primary/20 overflow-hidden">
-            <div className="p-5 border-b border-slate-200 bg-green-50/50 flex items-center gap-2">
-              <FileUp className="w-5 h-5 text-primary" />
-              <h3 className="font-semibold text-slate-800">Generate Assessment from PDFs</h3>
+            <div className="p-5 border-b border-slate-200 bg-green-50/50 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileUp className="w-5 h-5 text-primary" />
+                <h3 className="font-semibold text-slate-800">Generate Assessment from PDFs</h3>
+              </div>
             </div>
+            
+            {/* Source Type Selection Tabs */}
+            <div className="flex border-b border-slate-200 bg-slate-50/50">
+              <button
+                type="button"
+                onClick={() => setAssessmentSource('exam')}
+                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${
+                  assessmentSource === 'exam'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                Standard Exam + Mark Scheme
+              </button>
+              <button
+                type="button"
+                onClick={() => setAssessmentSource('fact_file')}
+                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${
+                  assessmentSource === 'fact_file'
+                    ? 'border-primary text-primary'
+                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
+                }`}
+              >
+                Fact Files (No Mark Scheme)
+              </button>
+            </div>
+
             <form onSubmit={handleCreateAssessment} className="p-6 space-y-6">
               <div className="grid md:grid-cols-2 gap-6">
                 <div className="space-y-4">
@@ -281,19 +321,25 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
               </div>
 
-              <div className="grid md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+              <div className={`grid ${assessmentSource === 'exam' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 pt-4 border-t border-slate-100`}>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">1. English Assessment (PDF)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    {assessmentSource === 'exam' ? '1. English Assessment (PDF)' : '1. English Fact File (PDF)'}
+                  </label>
                   <input type="file" accept="application/pdf" required onChange={e => setEnPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">2. Irish Assessment (PDF)</label>
+                  <label className="block text-sm font-medium text-slate-700 mb-1">
+                    {assessmentSource === 'exam' ? '2. Irish Assessment (PDF)' : '2. Irish Fact File (PDF)'}
+                  </label>
                   <input type="file" accept="application/pdf" required onChange={e => setGaPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">3. Mark Scheme (PDF)</label>
-                  <input type="file" accept="application/pdf" required onChange={e => setMsPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
-                </div>
+                {assessmentSource === 'exam' && (
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">3. Mark Scheme (PDF)</label>
+                    <input type="file" accept="application/pdf" required={assessmentSource === 'exam'} onChange={e => setMsPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
+                  </div>
+                )}
               </div>
 
               {errorLog && (
