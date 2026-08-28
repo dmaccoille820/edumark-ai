@@ -19,12 +19,12 @@
     "@types/node": "latest",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
-    "@vitejs/plugin-react": "latest",
+    "@vitejs/plugin-react": "^4.3.4",
     "@testing-library/jest-dom": "latest",
     "@testing-library/react": "latest",
     "typescript": "latest",
-    "vite": "latest",
-    "vitest": "latest",
-    "jsdom": "latest"
+    "vite": "^6.0.5",
+    "vitest": "^2.1.8",
+    "jsdom": "^25.0.1"
   }
 }

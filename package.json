@@ -1,6 +1,9 @@
 {
   "name": "edumark-ai",
-  "workspaces": ["frontend", "backend"], 
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
   "scripts": {
     "dev-frontend": "npm run dev --prefix frontend",
     "dev-backend": "npm run dev --prefix backend",
@@ -9,6 +12,8 @@
     "test": "npm run test --prefix frontend && npm run test --prefix backend"
   },
   "devDependencies": {
-    "concurrently": "latest"
+    "concurrently": "latest",
+    "jsdom": "^29.1.1",
+    "vitest": "^2.1.9"
   }
 }
