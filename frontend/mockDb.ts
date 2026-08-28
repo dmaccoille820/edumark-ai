@@ -1,8 +1,8 @@
 import { User, Assessment, Submission } from './types';
 
 export const MOCK_USERS: User[] = [
-  { id: 's1', email: 'student@school.edu', examNumber: 'EXAM123', name: 'Alex Johnson', role: 'student' },
-  { id: 's2', email: 'jane@school.edu', examNumber: 'EXAM456', name: 'Jane Smith', role: 'student' },
+  { id: 's1', email: 'student@school.edu', examNumber: '0123', name: 'Alex Johnson', role: 'student' },
+  { id: 's2', email: 'jane@school.edu', examNumber: '0456', name: 'Jane Smith', role: 'student' },
   { id: 't1', email: 'teacher@school.edu', teacherId: 'TEACH999', name: 'Mr. Davis', role: 'teacher' },
 ];
 

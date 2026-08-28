@@ -88,7 +88,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         
         <div className="mt-6 text-xs text-slate-400 text-center space-y-1">
           <p className="font-semibold">Demo Credentials:</p>
-          <p>Student: student@school.edu / 1234</p>
+          <p>Student: student@school.edu / 0123</p>
           <p>Teacher: teacher@school.edu / 9999</p>
         </div>
       </div>

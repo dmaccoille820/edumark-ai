@@ -63,8 +63,8 @@ app.use('/api-proxy', proxyLimiter);
 app.post('/api/auth/login', loginLimiter, (req, res) => {
   const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  if (!/^\d{4}$/.test(password)) {
-    return res.status(400).json({ error: 'Password must be exactly four digits.' });
+  if (!email || !/^\d{4}$/.test(password)) {
+    return res.status(400).json({ error: 'Email is required and password must be exactly four digits.' });
   }
 
   const user = findUser(email, password);

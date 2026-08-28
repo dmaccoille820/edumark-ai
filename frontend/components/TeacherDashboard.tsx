@@ -166,7 +166,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-600 font-medium">
-              {teacher.name} ({teacher.teacherId})
+              {teacher.name} ({teacher.accessId || teacher.teacherId})
             </span>
             <button
               onClick={onLogout}
