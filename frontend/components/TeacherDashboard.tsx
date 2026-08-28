@@ -73,7 +73,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   }, [assessmentMaxMarks, students, submissions]);
 
   const handleExportCSV = () => {
-    const headers = ['Student Name', 'Email', 'Exam Number', 'Assessment', 'Score (%)', 'Date Submitted'];
+    const headers = ['Student Name', 'Email', 'Exam Number', 'Assessment', 'Score (%)', 'Date Submitted', 'Detailed Q&A and Feedback'];
     
     const rows = submissions.map(sub => {
       const student = students.find(u => u.id === sub.studentId);
@@ -89,7 +89,33 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       // Escape quotes in titles
       const safeTitle = assessment.title.en.replace(/"/g, '""');
 
-      return `"${student.name}","${student.email}","${student.examNumber}","${safeTitle}","${percentage}%","${date}"`;
+      // Build detailed question-by-question Q&A and AI feedback string
+      const detailedFeedbackParts = assessment.questions.map((q, idx) => {
+        const studentAnswer = sub.answers[q.id] || '';
+        const qFeedback = sub.feedback?.[q.id];
+        
+        let answerStr = '';
+        if (q.type === 'mcq') {
+          const optIdx = parseInt(studentAnswer, 10);
+          if (!isNaN(optIdx) && q.options && q.options[optIdx]) {
+            answerStr = `Option ${optIdx + 1}: ${q.options[optIdx].en}`;
+          } else {
+            answerStr = studentAnswer;
+          }
+        } else {
+          answerStr = studentAnswer;
+        }
+
+        const scorePart = qFeedback ? `${qFeedback.score}/${q.maxMarks}` : `N/A`;
+        const commentEn = qFeedback ? qFeedback.commentEn : 'No feedback';
+        const commentGa = qFeedback ? qFeedback.commentGa : 'Gan aiseolas';
+
+        return `Q${idx + 1}: ${q.text.en}\n- Answer: ${answerStr}\n- Score: ${scorePart}\n- Feedback (EN): ${commentEn}\n- Feedback (GA): ${commentGa}`;
+      });
+
+      const safeDetailedFeedback = detailedFeedbackParts.join('\n\n').replace(/"/g, '""');
+
+      return `"${student.name}","${student.email}","${student.examNumber}","${safeTitle}","${percentage}%","${date}","${safeDetailedFeedback}"`;
     }).filter(Boolean);
 
     const csvContent = [headers.join(','), ...rows].join('\n');
