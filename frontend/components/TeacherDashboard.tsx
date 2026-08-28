@@ -1,16 +1,25 @@
 import React, { useMemo, useState } from 'react';
 import { Users, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
-import { MOCK_USERS, MOCK_ASSESSMENTS, MOCK_SUBMISSIONS } from '../mockDb';
 import { generateAssessmentFromPdfs } from '../services/aiService';
 
 interface TeacherDashboardProps {
   teacher: User;
+  initialAssessments: Assessment[];
+  initialSubmissions: Submission[];
+  students: User[];
   onLogout: () => void;
 }
 
-export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onLogout }) => {
-  const [assessments, setAssessments] = useState<Assessment[]>(MOCK_ASSESSMENTS);
+export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
+  teacher,
+  initialAssessments,
+  initialSubmissions,
+  students,
+  onLogout,
+}) => {
+  const [assessments, setAssessments] = useState<Assessment[]>(initialAssessments);
+  const [submissions] = useState<Submission[]>(initialSubmissions);
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorLog, setErrorLog] = useState<string>('');
@@ -35,10 +44,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
 
   // Calculate student averages
   const studentAverages = useMemo(() => {
-    const students = MOCK_USERS.filter(u => u.role === 'student');
+    const studentUsers = students.filter(u => u.role === 'student');
     
-    return students.map(student => {
-      const subs = MOCK_SUBMISSIONS.filter(s => s.studentId === student.id);
+    return studentUsers.map(student => {
+      const subs = submissions.filter(s => s.studentId === student.id);
       let totalPercentageSum = 0;
       
       subs.forEach(sub => {
@@ -55,13 +64,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
         averagePercentage: average
       };
     });
-  }, [assessmentMaxMarks]);
+  }, [assessmentMaxMarks, students, submissions]);
 
   const handleExportCSV = () => {
     const headers = ['Student Name', 'Email', 'Exam Number', 'Assessment', 'Score (%)', 'Date Submitted'];
     
-    const rows = MOCK_SUBMISSIONS.map(sub => {
-      const student = MOCK_USERS.find(u => u.id === sub.studentId);
+    const rows = submissions.map(sub => {
+      const student = students.find(u => u.id === sub.studentId);
       const assessment = assessments.find(a => a.id === sub.assessmentId);
       
       if (!student || !assessment) return null;
@@ -127,9 +136,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
         questions: questions
       };
 
-      // Update local state and mock DB
-      MOCK_ASSESSMENTS.push(newAssessment);
-      setAssessments([...MOCK_ASSESSMENTS]);
+      // Save to database
+      const res = await fetch('/api-proxy/assessments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAssessment)
+      });
+
+      if (!res.ok) {
+        throw new Error('Failed to save assessment to the database.');
+      }
+
+      const savedAssessment = await res.json();
+      setAssessments([...assessments, savedAssessment]);
       
       // Reset form
       setIsCreating(false);
@@ -356,15 +375,15 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({ teacher, onL
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {MOCK_SUBMISSIONS.length === 0 ? (
+                {submissions.length === 0 ? (
                   <tr>
                     <td colSpan={4} className="px-6 py-8 text-center text-slate-500 italic">
                       No submissions recorded yet.
                     </td>
                   </tr>
                 ) : (
-                  [...MOCK_SUBMISSIONS].reverse().map((sub) => {
-                    const student = MOCK_USERS.find(u => u.id === sub.studentId);
+                  [...submissions].reverse().map((sub) => {
+                    const student = students.find(u => u.id === sub.studentId);
                     const assessment = assessments.find(a => a.id === sub.assessmentId);
                     const maxMarks = assessment ? assessmentMaxMarks[assessment.id] : 1;
                     const percentage = Math.round(((sub.totalScore || 0) / maxMarks) * 100);

@@ -1,10 +1,11 @@
 import React from 'react';
 import { FileText, Clock, CheckCircle, LogOut } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
-import { MOCK_ASSESSMENTS, MOCK_SUBMISSIONS } from '../mockDb';
 
 interface DashboardProps {
   student: User;
+  assessments: Assessment[];
+  submissions: Submission[];
   onStartAssessment: (assessment: Assessment) => void;
   onViewResults: (submission: Submission) => void;
   onLogout: () => void;
@@ -12,12 +13,14 @@ interface DashboardProps {
 
 export const Dashboard: React.FC<DashboardProps> = ({
   student,
+  assessments,
+  submissions,
   onStartAssessment,
   onViewResults,
   onLogout,
 }) => {
   // Find which assessments the student has already taken
-  const studentSubmissions = MOCK_SUBMISSIONS.filter((s) => s.studentId === student.id);
+  const studentSubmissions = submissions.filter((s) => s.studentId === student.id);
   const completedAssessmentIds = new Set(studentSubmissions.map((s) => s.assessmentId));
 
   return (
@@ -45,7 +48,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid gap-6 md:grid-cols-2">
-          {MOCK_ASSESSMENTS.map((assessment) => {
+          {assessments.map((assessment) => {
             const isCompleted = completedAssessmentIds.has(assessment.id);
             const submission = studentSubmissions.find((s) => s.assessmentId === assessment.id);
 

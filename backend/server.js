@@ -10,9 +10,21 @@ import { GoogleAuth } from 'google-auth-library';
 import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
+import {
+  initDb,
+  getUser,
+  getUsers,
+  getAssessments,
+  createAssessment,
+  getSubmissions,
+  createSubmission
+} from './db.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "7mb"}));
+
+// Initialize database
+initDb().catch(err => console.error('Database connection failed:', err));
 
 const PORT = process?.env?.API_BACKEND_PORT || 5000;
 const API_BACKEND_HOST = process?.env?.API_BACKEND_HOST || "127.0.0.1";
@@ -195,6 +207,102 @@ function getRequestHeaders(accessToken) {
     'Content-Type': 'application/json',
   };
 }
+
+// Dynamic route-rewriting middleware to make paths unified between local Vite proxy and production Vercel
+app.use((req, res, next) => {
+  if (req.url.startsWith('/api-proxy/')) {
+    req.url = req.url.replace('/api-proxy/', '/api/');
+  } else if (req.url.startsWith('/api/proxy/')) {
+    req.url = req.url.replace('/api/proxy/', '/api/');
+  }
+  next();
+});
+
+// --- Database backed API endpoints ---
+
+// Authentication Endpoint
+app.post('/api/auth/login', async (req, res) => {
+  const { email, accessId } = req.body;
+  if (!email || !accessId) {
+    return res.status(400).json({ error: 'Email and accessId are required.' });
+  }
+  try {
+    const user = await getUser(email, accessId);
+    if (user) {
+      return res.json(user);
+    } else {
+      return res.status(401).json({ error: 'Invalid credentials. Please try again.' });
+    }
+  } catch (err) {
+    console.error('Login error:', err);
+    return res.status(500).json({ error: 'Internal server error during login.' });
+  }
+});
+
+// Fetch users listing (optional role query param)
+app.get('/api/users', async (req, res) => {
+  const role = req.query.role || null;
+  try {
+    const list = await getUsers(role);
+    return res.json(list);
+  } catch (err) {
+    console.error('Fetch users error:', err);
+    return res.status(500).json({ error: 'Internal server error fetching users.' });
+  }
+});
+
+// Fetch all assessments (including questions)
+app.get('/api/assessments', async (req, res) => {
+  try {
+    const list = await getAssessments();
+    return res.json(list);
+  } catch (err) {
+    console.error('Fetch assessments error:', err);
+    return res.status(500).json({ error: 'Internal server error fetching assessments.' });
+  }
+});
+
+// Save newly generated assessment
+app.post('/api/assessments', async (req, res) => {
+  const assessment = req.body;
+  if (!assessment || !assessment.id || !assessment.questions) {
+    return res.status(400).json({ error: 'Invalid assessment payload.' });
+  }
+  try {
+    const created = await createAssessment(assessment);
+    return res.json(created);
+  } catch (err) {
+    console.error('Create assessment error:', err);
+    return res.status(500).json({ error: 'Internal server error creating assessment.' });
+  }
+});
+
+// Fetch submissions (optional studentId query param)
+app.get('/api/submissions', async (req, res) => {
+  const studentId = req.query.studentId || null;
+  try {
+    const list = await getSubmissions(studentId);
+    return res.json(list);
+  } catch (err) {
+    console.error('Fetch submissions error:', err);
+    return res.status(500).json({ error: 'Internal server error fetching submissions.' });
+  }
+});
+
+// Record student submission
+app.post('/api/submissions', async (req, res) => {
+  const submission = req.body;
+  if (!submission || !submission.id || !submission.studentId || !submission.assessmentId) {
+    return res.status(400).json({ error: 'Invalid submission payload.' });
+  }
+  try {
+    const created = await createSubmission(submission);
+    return res.json(created);
+  } catch (err) {
+    console.error('Create submission error:', err);
+    return res.status(500).json({ error: 'Internal server error creating submission.' });
+  }
+});
 
 // --- Proxy Endpoint ---
 app.post('/api-proxy', async (req, res) => {

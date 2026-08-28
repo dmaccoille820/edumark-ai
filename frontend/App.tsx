@@ -1,6 +1,5 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { User, Assessment, Submission, AppState, AnswerFeedback } from './types';
-import { MOCK_SUBMISSIONS } from './mockDb';
 import { gradeWrittenAnswer } from './services/aiService';
 
 import { Login } from './components/Login';
@@ -15,6 +14,55 @@ const App: React.FC = () => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentAssessment, setCurrentAssessment] = useState<Assessment | null>(null);
   const [currentSubmission, setCurrentSubmission] = useState<Submission | null>(null);
+
+  // DB backend states
+  const [assessments, setAssessments] = useState<Assessment[]>([]);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [students, setStudents] = useState<User[]>([]);
+  const [isLoading, setIsLoading] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (!currentUser) {
+      setAssessments([]);
+      setSubmissions([]);
+      setStudents([]);
+      return;
+    }
+
+    const fetchData = async () => {
+      setIsLoading(true);
+      try {
+        const assRes = await fetch('/api-proxy/assessments');
+        if (assRes.ok) {
+          const assData = await assRes.json();
+          setAssessments(assData);
+        }
+
+        const subUrl = currentUser.role === 'student'
+          ? `/api-proxy/submissions?studentId=${currentUser.id}`
+          : '/api-proxy/submissions';
+        const subRes = await fetch(subUrl);
+        if (subRes.ok) {
+          const subData = await subRes.json();
+          setSubmissions(subData);
+        }
+
+        if (currentUser.role === 'teacher') {
+          const uRes = await fetch('/api-proxy/users?role=student');
+          if (uRes.ok) {
+            const uData = await uRes.json();
+            setStudents(uData);
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching data from database API:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [currentUser]);
 
   const handleLogin = (user: User) => {
     setCurrentUser(user);
@@ -38,14 +86,12 @@ const App: React.FC = () => {
   };
 
   const handleViewResults = (submission: Submission) => {
-    import('./mockDb').then(({ MOCK_ASSESSMENTS }) => {
-      const assessment = MOCK_ASSESSMENTS.find(a => a.id === submission.assessmentId);
-      if (assessment) {
-        setCurrentAssessment(assessment);
-        setCurrentSubmission(submission);
-        setAppState('results');
-      }
-    });
+    const assessment = assessments.find(a => a.id === submission.assessmentId);
+    if (assessment) {
+      setCurrentAssessment(assessment);
+      setCurrentSubmission(submission);
+      setAppState('results');
+    }
   };
 
   const handleAssessmentSubmit = useCallback(async (answers: Record<string, string>) => {
@@ -103,10 +149,25 @@ const App: React.FC = () => {
       submittedAt: new Date().toISOString(),
     };
 
-    // Save to mock DB
-    MOCK_SUBMISSIONS.push(newSubmission);
+    try {
+      // Save to Database via API
+      const res = await fetch('/api-proxy/submissions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newSubmission)
+      });
+      if (!res.ok) {
+        throw new Error('Failed to save submission to the database.');
+      }
+      const savedSubmission = await res.json();
+      setSubmissions(prev => [savedSubmission, ...prev]);
+      setCurrentSubmission(savedSubmission);
+    } catch (err) {
+      console.error('Error submitting assessment:', err);
+      // Fallback locally
+      setCurrentSubmission(newSubmission);
+    }
     
-    setCurrentSubmission(newSubmission);
     setAppState('results');
   }, [currentUser, currentAssessment]);
 
@@ -120,11 +181,24 @@ const App: React.FC = () => {
     return null;
   }
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <p className="text-slate-600 font-medium">Loading data from portal...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <>
       {appState === 'teacher-dashboard' && currentUser.role === 'teacher' && (
         <TeacherDashboard
           teacher={currentUser}
+          initialAssessments={assessments}
+          initialSubmissions={submissions}
+          students={students}
           onLogout={handleLogout}
         />
       )}
@@ -132,6 +206,8 @@ const App: React.FC = () => {
       {appState === 'dashboard' && currentUser.role === 'student' && (
         <Dashboard
           student={currentUser}
+          assessments={assessments}
+          submissions={submissions}
           onStartAssessment={handleStartAssessment}
           onViewResults={handleViewResults}
           onLogout={handleLogout}

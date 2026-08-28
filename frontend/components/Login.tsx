@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { BookOpen, LogIn } from 'lucide-react';
-import { MOCK_USERS } from '../mockDb';
 import { User } from '../types';
 
 interface LoginProps {
@@ -12,20 +11,27 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [accessId, setAccessId] = useState('');
   const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    const user = MOCK_USERS.find(
-      (u) => 
-        u.email.toLowerCase() === email.toLowerCase() && 
-        (u.examNumber === accessId || u.teacherId === accessId)
-    );
+    try {
+      const res = await fetch('/api-proxy/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, accessId })
+      });
 
-    if (user) {
-      onLogin(user);
-    } else {
-      setError('Invalid email or access ID. Please try again.');
+      if (res.ok) {
+        const user = await res.json();
+        onLogin(user);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        setError(errData.error || 'Invalid credentials. Please try again.');
+      }
+    } catch (err) {
+      console.error('Login request error:', err);
+      setError('Failed to connect to the login service.');
     }
   };
 
