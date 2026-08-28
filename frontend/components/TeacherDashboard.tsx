@@ -171,11 +171,20 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         questions = await generateAssessmentFromFactFiles(enBase64, gaBase64);
       }
 
+      const assessmentId = `a_${Date.now()}`;
+
+      // Prefix question IDs with the assessment ID to avoid PK collisions
+      // (AI returns generic ids like q1, q2 which clash with seed data)
+      const prefixedQuestions = questions.map((q: any) => ({
+        ...q,
+        id: `${assessmentId}_${q.id}`
+      }));
+
       const newAssessment: Assessment = {
-        id: `a_${Date.now()}`,
+        id: assessmentId,
         title: { en: titleEn, ga: titleGa },
         description: { en: descEn, ga: descGa },
-        questions: questions
+        questions: prefixedQuestions
       };
 
       // Save to database
