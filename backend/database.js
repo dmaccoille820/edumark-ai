@@ -477,7 +477,7 @@ export function createAssessment(assessment) {
               q.text.en,
               q.text.ga,
               q.maxMarks,
-              q.type === 'mcq' ? JSON.stringify(q.options) : null,
+              q.type === 'mcq' ? q.options : null,
               q.type === 'mcq' ? q.correctAnswerIndex : null,
               q.type === 'written' ? q.markScheme?.en : null,
               q.type === 'written' ? q.markScheme?.ga : null,

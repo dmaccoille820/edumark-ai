@@ -292,7 +292,7 @@ app.post('/api/assessments', requireAuth, async (req, res) => {
     return res.json(created);
   } catch (err) {
     console.error('Create assessment error:', err);
-    return res.status(500).json({ error: 'Internal server error creating assessment.' });
+    return res.status(500).json({ error: err.message || 'Internal server error creating assessment.' });
   }
 });
 
