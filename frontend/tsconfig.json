@@ -20,5 +20,5 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src", "App.tsx", "index.tsx", "mockDb.ts", "types.ts", "services/**/*.ts", "components/**/*.tsx"]
+  "include": ["src", "App.tsx", "index.tsx", "mockDb.ts", "types.ts", "services/**/*.ts", "components/**/*.tsx", "images.d.ts", "*.d.ts"]
 }

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { LogIn } from 'lucide-react';
+import edumarkLogo from '../edumark.jpg';
 
 interface LoginProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -26,7 +27,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
         <div className="flex flex-col items-center mb-8">
           <img
-            src="/edumark.jpg"
+            src={edumarkLogo}
             alt="EduMark logo"
             className="w-24 h-24 rounded-full object-cover mb-4 shadow-md border-2 border-primary/20"
           />

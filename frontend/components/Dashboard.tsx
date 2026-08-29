@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Search, Clock, CheckCircle, LogOut } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
+import edumarkLogo from '../edumark.jpg';
 
 interface DashboardProps {
   student: User;
@@ -40,7 +41,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
-              src="/edumark.jpg"
+              src={edumarkLogo}
               alt="EduMark logo"
               className="w-9 h-9 rounded-full object-cover border border-primary/20"
             />

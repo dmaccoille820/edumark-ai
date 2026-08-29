@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Search, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
+import edumarkLogo from '../edumark.jpg';
 
 import { generateAssessmentFromPdfs, generateAssessmentFromFactFiles } from '../services/aiService';
 import { getSubmissions } from '../services/api';
@@ -244,7 +245,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
-              src="/edumark.jpg"
+              src={edumarkLogo}
               alt="EduMark logo"
               className="w-9 h-9 rounded-full object-cover border border-primary/20"
             />
