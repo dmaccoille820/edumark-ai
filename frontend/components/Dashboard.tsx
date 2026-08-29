@@ -1,5 +1,5 @@
-import React from 'react';
-import { FileText, Clock, CheckCircle, LogOut } from 'lucide-react';
+import React, { useState } from 'react';
+import { Search, Clock, CheckCircle, LogOut } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
 
 interface DashboardProps {
@@ -21,15 +21,29 @@ export const Dashboard: React.FC<DashboardProps> = ({
 }) => {
 
   // Find which assessments the student has already taken
+  const [searchQuery, setSearchQuery] = useState('');
   const studentSubmissions = submissions.filter((s) => s.studentId === student.id);
   const completedAssessmentIds = new Set(studentSubmissions.map((s) => s.assessmentId));
+
+  const filteredAssessments = assessments.filter((a) => {
+    const q = searchQuery.toLowerCase();
+    return (
+      a.title.en.toLowerCase().includes(q) ||
+      a.title.ga.toLowerCase().includes(q) ||
+      a.description.en.toLowerCase().includes(q)
+    );
+  });
 
   return (
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <FileText className="w-6 h-6 text-primary" />
+          <div className="flex items-center gap-3">
+            <img
+              src="/edumark.jpg"
+              alt="EduMark logo"
+              className="w-9 h-9 rounded-full object-cover border border-primary/20"
+            />
             <h1 className="text-xl font-bold text-slate-800">My Assessments</h1>
           </div>
           <div className="flex items-center gap-4">
@@ -48,8 +62,28 @@ export const Dashboard: React.FC<DashboardProps> = ({
       </header>
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Search / Filter */}
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          <input
+            id="assessment-search"
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search assessments…"
+            aria-label="Search assessments"
+            className="w-full pl-9 pr-4 py-2.5 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors bg-white"
+          />
+        </div>
+
         <div className="grid gap-6 md:grid-cols-2">
-          {assessments.map((assessment) => {
+          {filteredAssessments.length === 0 && (
+            <div className="col-span-2 text-center py-16 text-slate-400">
+              <Search className="w-8 h-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">No assessments match &ldquo;{searchQuery}&rdquo;</p>
+            </div>
+          )}
+          {filteredAssessments.map((assessment) => {
             const isCompleted = completedAssessmentIds.has(assessment.id);
             const submission = studentSubmissions.find((s) => s.assessmentId === assessment.id);
 

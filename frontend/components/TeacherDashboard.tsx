@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Users, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
+import { Search, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle } from 'lucide-react';
 import { User, Assessment, Submission } from '../types';
 
 import { generateAssessmentFromPdfs, generateAssessmentFromFactFiles } from '../services/aiService';
@@ -26,6 +26,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorLog, setErrorLog] = useState<string>('');
   const [assessmentSource, setAssessmentSource] = useState<'exam' | 'fact_file'>('exam');
+  const [assessmentSearch, setAssessmentSearch] = useState('');
 
   useEffect(() => {
     getSubmissions().then(setSubmissions).catch((error) => setErrorLog(error.message));
@@ -48,6 +49,17 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
     return map;
   }, [assessments]);
+
+  // Filtered assessments for search
+  const filteredAssessments = useMemo(() => {
+    const q = assessmentSearch.toLowerCase();
+    if (!q) return assessments;
+    return assessments.filter(
+      a =>
+        a.title.en.toLowerCase().includes(q) ||
+        a.title.ga.toLowerCase().includes(q)
+    );
+  }, [assessments, assessmentSearch]);
 
   // Calculate student averages
   const studentAverages = useMemo(() => {
@@ -230,8 +242,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     <div className="min-h-screen bg-slate-50">
       <header className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="w-6 h-6 text-primary" />
+          <div className="flex items-center gap-3">
+            <img
+              src="/edumark.jpg"
+              alt="EduMark logo"
+              className="w-9 h-9 rounded-full object-cover border border-primary/20"
+            />
             <h1 className="text-xl font-bold text-slate-800">Teacher Dashboard</h1>
           </div>
           <div className="flex items-center gap-4">
@@ -392,12 +408,35 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
         {/* Available Assessments Section */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
-            <BookOpen className="w-5 h-5 text-slate-500" />
-            <h3 className="font-semibold text-slate-800">Available Assessments</h3>
+          <div className="p-5 border-b border-slate-200 bg-slate-50">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2">
+                <BookOpen className="w-5 h-5 text-slate-500" />
+                <h3 className="font-semibold text-slate-800">Available Assessments</h3>
+              </div>
+              {/* Teacher assessment search */}
+              <div className="relative w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+                <input
+                  id="teacher-assessment-search"
+                  type="text"
+                  value={assessmentSearch}
+                  onChange={(e) => setAssessmentSearch(e.target.value)}
+                  placeholder="Filter assessments…"
+                  aria-label="Filter assessments"
+                  className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors"
+                />
+              </div>
+            </div>
           </div>
           <div className="p-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {assessments.map(assessment => (
+            {filteredAssessments.length === 0 && (
+              <div className="col-span-3 text-center py-10 text-slate-400">
+                <Search className="w-7 h-7 mx-auto mb-2 opacity-40" />
+                <p className="text-sm">No assessments match &ldquo;{assessmentSearch}&rdquo;</p>
+              </div>
+            )}
+            {filteredAssessments.map(assessment => (
               <div key={assessment.id} className="border border-slate-200 rounded-lg p-4 hover:border-primary/30 transition-colors">
                 <h4 className="font-semibold text-slate-800 truncate" title={assessment.title.en}>{assessment.title.en}</h4>
                 <p className="text-xs text-slate-500 italic truncate mb-3" title={assessment.title.ga}>{assessment.title.ga}</p>

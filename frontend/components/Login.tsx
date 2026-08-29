@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { BookOpen, LogIn } from 'lucide-react';
+import { LogIn } from 'lucide-react';
 
 interface LoginProps {
   onLogin: (email: string, password: string) => Promise<void>;
@@ -25,9 +25,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     <div className="min-h-screen flex items-center justify-center bg-slate-100 px-4">
       <div className="max-w-md w-full bg-white rounded-xl shadow-lg p-8">
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-primary/10 p-3 rounded-full mb-4">
-            <BookOpen className="w-8 h-8 text-primary" />
-          </div>
+          <img
+            src="/edumark.jpg"
+            alt="EduMark logo"
+            className="w-24 h-24 rounded-full object-cover mb-4 shadow-md border-2 border-primary/20"
+          />
           <h1 className="text-2xl font-bold text-slate-800">EduMark AI</h1>
           <p className="text-slate-500 text-sm mt-1">Assessment Portal</p>
         </div>
