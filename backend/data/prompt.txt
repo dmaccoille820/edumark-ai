@@ -1,0 +1,46 @@
+You are an expert full-stack engineer. Build a bilingual (English & Irish) school assessment portal called "EduMark AI" ready for deployment to Vercel (Frontend + Serverless functions) and Neon (PostgreSQL database).
+Implement the project using the following specifications:
+### 1. Project Directory Structure
+Create a monorepo containing:
+- /package.json (workspaces for frontend and backend)
+- /vercel.json (routing rewrites for serverless support)
+- /api/proxy.mjs (imports and exports backend server to route Vercel serverless requests)
+- /backend/server.js (Express server containing API endpoints and Vertex AI proxy)
+- /backend/db.js (Neon PostgreSQL pool configuration with automatic in-memory fallback if DATABASE_URL is missing)
+- /backend/schema.sql (relational schema definition and mock seed data)
+- /frontend/ (Vite + React + TypeScript + Tailwind SPA)
+### 2. Tech Stack Requirements
+- Backend: Node.js, Express, pg (PostgreSQL driver), google-auth-library, dotenv.
+- Frontend: React 18, TypeScript, Lucide React, Vite, and the official @google/genai SDK.
+- AI Model: Use gemini-2.5-flash for PDF question generation and student grading.
+### 3. Database Layer (backend/db.js & backend/schema.sql)
+Implement standard tables:
+- users: id, email, name, role (student/teacher), exam_number, teacher_id
+- assessments: id, title_en, title_ga, description_en, description_ga
+- questions: id, assessment_id, type (mcq/written), text_en, text_ga, max_marks, options (jsonb), correct_answer_index, mark_scheme_en, mark_scheme_ga, sort_order
+- submissions: id, student_id, assessment_id, answers (jsonb), status, total_score, submitted_at
+- feedbacks: id, submission_id, question_id, score, comment_en, comment_ga
+Ensure db.js handles pg.Pool correctly using process.env.DATABASE_URL. If the environment variable is not defined, it must initialize an in-memory javascript object representing the tables pre-populated with mock users, exams, and sample submissions.
+### 4. Backend Endpoints (backend/server.js)
+Define these routes:
+- POST /api/auth/login: Expects { email, accessId }, checks against DB and returns user profile.
+- GET /api/users: Queries users list, supports filtering by role.
+- GET /api/assessments: Returns all assessments and their child questions.
+- POST /api/assessments: Saves newly generated assessments to the database.
+- GET /api/submissions: Returns submissions list (optionally filtered by studentId query param).
+- POST /api/submissions: Records student answers, scores, and feedback details.
+- POST /api-proxy: Acts as a secure proxy to Google Vertex AI. Validates authorization headers and forwards requests to Google Cloud APIs. It must include rate limiting and strict hostname validation (only forwarding to aiplatform.clients6.google.com) to prevent SSRF vulnerabilities.
+Add a middleware in server.js to rewrite /api-proxy/* and /api/proxy/* prefixes to local /api/* routes so that paths remain identical between Vite local development and Vercel cloud serverless deployments.
+### 5. Frontend & Dynamic Bilingual Views
+- Implement a login screen supporting Demo credentials:
+  * Student: student@school.edu / EXAM123
+  * Teacher: teacher@school.edu / TEACH999
+- Implement a Student Dashboard showing available assessments, taking tests, toggling question card languages between English and Irish, and submitting answers.
+- Implement a Teacher Dashboard allowing the upload of three PDFs (English exam, Irish exam, and English mark scheme). The frontend must convert these PDFs to base64, send them to Gemini via the proxy to generate a bilingual structured JSON assessment, and save it to the DB.
+- Build a Results View showing student scores and constructive evaluation feedback side-by-side in both English and Irish languages.
+### 6. AI Prompting Configurations (frontend/services/aiService.ts)
+- Assessment PDF Generator Prompt: Instruct gemini-2.5-flash to align the English PDF with the Irish PDF, extract MCQ options, translate written mark schemes to Irish, and return structured JSON conforming to a strict JSON Schema.
+- AI Grading Prompt: Instruct gemini-2.5-flash to grade written answers strictly against the bilingual mark schemes, output a score, and write comments explaining the score in both English and Irish. Use responseSchema to enforce JSON output.
+### 7. Vercel Configuration (vercel.json)
+Configure outputDirectory to "frontend/dist" and define rewrites routing "/api-proxy" to "/api/proxy" and catch-all routes to "/index.html" for React router fallback.
+Generate all files with clean, production-ready code, complete error handling, and parameterized database transactions.

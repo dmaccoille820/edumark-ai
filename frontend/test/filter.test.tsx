@@ -234,9 +234,11 @@ describe('Teacher Dashboard - assessment filter', () => {
     await loginAsTeacher();
 
     expect(screen.getByLabelText('Filter assessments')).toBeInTheDocument();
-    expect(screen.getByText('Introduction to Biology')).toBeInTheDocument();
-    expect(screen.getByText('Chemistry Fundamentals')).toBeInTheDocument();
-    expect(screen.getByText('Irish History')).toBeInTheDocument();
+    // Use heading role to target the <h4> assessment cards,
+    // not the <option> elements in the export <select> dropdown.
+    expect(screen.getByRole('heading', { name: 'Introduction to Biology' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Chemistry Fundamentals' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Irish History' })).toBeInTheDocument();
   });
 
   it('filters assessments by English title', async () => {
@@ -247,11 +249,12 @@ describe('Teacher Dashboard - assessment filter', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Chemistry Fundamentals')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Chemistry Fundamentals' })).toBeInTheDocument();
     });
 
-    expect(screen.queryByText('Introduction to Biology')).not.toBeInTheDocument();
-    expect(screen.queryByText('Irish History')).not.toBeInTheDocument();
+    // These cards should be gone; select options are excluded by role query
+    expect(screen.queryByRole('heading', { name: 'Introduction to Biology' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Irish History' })).not.toBeInTheDocument();
   });
 
   it('filters assessments by Irish title (case-insensitive)', async () => {
@@ -262,11 +265,11 @@ describe('Teacher Dashboard - assessment filter', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Irish History')).toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: 'Irish History' })).toBeInTheDocument();
     });
 
-    expect(screen.queryByText('Introduction to Biology')).not.toBeInTheDocument();
-    expect(screen.queryByText('Chemistry Fundamentals')).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Introduction to Biology' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Chemistry Fundamentals' })).not.toBeInTheDocument();
   });
 
   it('shows empty state message when no assessments match', async () => {

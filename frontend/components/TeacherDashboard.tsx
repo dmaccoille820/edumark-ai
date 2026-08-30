@@ -28,6 +28,8 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [errorLog, setErrorLog] = useState<string>('');
   const [assessmentSource, setAssessmentSource] = useState<'exam' | 'fact_file'>('exam');
   const [assessmentSearch, setAssessmentSearch] = useState('');
+  // '' means "all assessments"
+  const [exportAssessmentId, setExportAssessmentId] = useState('');
 
   useEffect(() => {
     getSubmissions().then(setSubmissions).catch((error) => setErrorLog(error.message));
@@ -88,8 +90,13 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
   const handleExportCSV = () => {
     const headers = ['Student Name', 'Email', 'Exam Number', 'Assessment', 'Score (%)', 'Date Submitted', 'Detailed Q&A and Feedback'];
-    
-    const rows = submissions.map(sub => {
+
+    // Filter to the selected assessment (or all if none selected)
+    const subsToExport = exportAssessmentId
+      ? submissions.filter(s => s.assessmentId === exportAssessmentId)
+      : submissions;
+
+    const rows = subsToExport.map(sub => {
       const student = students.find(u => u.id === sub.studentId);
       const assessment = assessments.find(a => a.id === sub.assessmentId);
       
@@ -100,7 +107,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const percentage = Math.round((score / maxMarks) * 100);
       const date = new Date(sub.submittedAt).toLocaleDateString();
 
-      // Escape quotes in titles
+      // Escape double-quotes for CSV
       const safeTitle = assessment.title.en.replace(/"/g, '""');
 
       // Build detailed question-by-question Q&A and AI feedback string
@@ -133,15 +140,24 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }).filter(Boolean);
 
     const csvContent = [headers.join(','), ...rows].join('\n');
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    // Prepend UTF-8 BOM so Excel on Windows reads the file correctly
+    // without it, Excel falls back to Windows-1252 and mangles diacritics and curly quotes.
+    const BOM = '\uFEFF';
+    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `assessment_results_${new Date().toISOString().split('T')[0]}.csv`);
+
+    const selectedAssessment = assessments.find(a => a.id === exportAssessmentId);
+    const fileLabel = selectedAssessment
+      ? selectedAssessment.title.en.replace(/[^a-z0-9]/gi, '_').toLowerCase()
+      : 'all_assessments';
+    link.setAttribute('download', `results_${fileLabel}_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   };
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -274,7 +290,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <h2 className="text-2xl font-bold text-slate-800">Assessment Overview</h2>
             <p className="text-slate-500 mt-1">Manage assessments, view student performance, and export results.</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex gap-3 items-center flex-wrap justify-end">
             <button
               onClick={() => setIsCreating(!isCreating)}
               className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -282,6 +298,21 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <PlusCircle className="w-4 h-4" />
               {isCreating ? 'Cancel Creation' : 'New Assessment'}
             </button>
+
+            {/* Assessment selector for export */}
+            <select
+              id="export-assessment-select"
+              value={exportAssessmentId}
+              onChange={e => setExportAssessmentId(e.target.value)}
+              aria-label="Select assessment to export"
+              className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors max-w-[220px]"
+            >
+              <option value="">All assessments</option>
+              {assessments.map(a => (
+                <option key={a.id} value={a.id}>{a.title.en}</option>
+              ))}
+            </select>
+
             <button
               onClick={handleExportCSV}
               className="bg-primary hover:bg-green-800 text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
