@@ -172,7 +172,14 @@ const ALLOWED_UPSTREAM_HOSTS = new Set([
 let googleCredentialsOption = {};
 if (process.env.GOOGLE_CREDENTIALS) {
   try {
-    googleCredentialsOption = { credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS) };
+    const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
+    
+    // 🔑 FIX: Convert escaped "\n" back into real newlines for OpenSSL
+    if (creds && creds.private_key) {
+      creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+    }
+
+    googleCredentialsOption = { credentials: creds };
   } catch (err) {
     console.error("Failed to parse GOOGLE_CREDENTIALS environment variable. Ensure it is a valid JSON string.", err);
   }
