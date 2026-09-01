@@ -173,16 +173,52 @@ const ALLOWED_UPSTREAM_HOSTS = new Set([
 let googleCredentialsOption = {};
 if (process.env.GOOGLE_CREDENTIALS) {
   try {
-    const creds = JSON.parse(process.env.GOOGLE_CREDENTIALS);
-    
-    // 🔑 FIX: Convert escaped "\n" back into real newlines for OpenSSL
+    let raw = process.env.GOOGLE_CREDENTIALS.trim();
+
+    // 1. Support Base64 encoded JSON if provided
+    if (!raw.startsWith('{') && !raw.startsWith('"')) {
+      try {
+        const decoded = Buffer.from(raw, 'base64').toString('utf8');
+        if (decoded.trim().startsWith('{')) {
+          raw = decoded.trim();
+        }
+      } catch (e) {
+        // Not base64, continue
+      }
+    }
+
+    // 2. Handle double-stringified JSON
+    if (raw.startsWith('"') && raw.endsWith('"')) {
+      raw = JSON.parse(raw);
+    }
+
+    const creds = typeof raw === 'string' ? JSON.parse(raw) : raw;
+
+    // 3. Bulletproof PEM Reconstruction for OpenSSL 3.0
     if (creds && creds.private_key) {
-      creds.private_key = creds.private_key.replace(/\\n/g, '\n');
+      let key = creds.private_key;
+      key = key.replace(/\\r\\n/g, '\n').replace(/\\n/g, '\n').replace(/\r\n/g, '\n');
+
+      const header = '-----BEGIN PRIVATE KEY-----';
+      const footer = '-----END PRIVATE KEY-----';
+      if (key.includes(header) && key.includes(footer)) {
+        // Strip headers and all whitespace from the inner base64 content
+        const body = key
+          .replace(header, '')
+          .replace(footer, '')
+          .replace(/\s+/g, '');
+        
+        // Chunk into standard 64-character PEM lines
+        const formattedBody = body.match(/.{1,64}/g)?.join('\n') || body;
+        key = `${header}\n${formattedBody}\n${footer}\n`;
+      }
+      creds.private_key = key;
     }
 
     googleCredentialsOption = { credentials: creds };
+    console.log('[Node Proxy] Successfully loaded Google Cloud credentials for:', creds.client_email);
   } catch (err) {
-    console.error("Failed to parse GOOGLE_CREDENTIALS environment variable. Ensure it is a valid JSON string.", err);
+    console.error("Failed to parse GOOGLE_CREDENTIALS environment variable:", err.message);
   }
 }
 
