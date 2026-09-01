@@ -246,12 +246,14 @@ function getRequestHeaders(accessToken) {
   };
 }
 
-// Dynamic route-rewriting middleware to make paths unified between local Vite proxy and production Vercel
+// Dynamic route-rewriting middleware 2
 app.use((req, res, next) => {
   if (req.url.startsWith('/api-proxy/')) {
     req.url = req.url.replace('/api-proxy/', '/api/');
   } else if (req.url.startsWith('/api/proxy/')) {
     req.url = req.url.replace('/api/proxy/', '/api/');
+  } else if (!req.url.startsWith('/api/') && req.url !== '/api-proxy') {
+    req.url = '/api' + (req.url.startsWith('/') ? '' : '/') + req.url;
   }
   next();
 });
