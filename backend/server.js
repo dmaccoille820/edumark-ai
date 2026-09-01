@@ -4,7 +4,8 @@
  * Copyright 2025 Google LLC
  * SPDX-License-Identifier: Apache-2.0
  */
-import 'dotenv/config';
+import dotenv from 'dotenv';
+dotenv.config({ path: new URL('.env.local', import.meta.url).pathname.replace(/^\/([A-Z]:)/, '$1') });
 import express from 'express';
 import { GoogleAuth } from 'google-auth-library';
 import fetch from 'node-fetch';
