@@ -331,6 +331,7 @@ app.post('/api/assessments', requireAuth, async (req, res) => {
     return res.status(400).json({ error: 'Invalid assessment payload.' });
   }
   try {
+    console.log('[API] createAssessment payload - questions count:', assessment.questions?.length, 'first q sample:', JSON.stringify(assessment.questions?.[0]));
     const created = await createAssessment(assessment);
     return res.json(created);
   } catch (err) {
