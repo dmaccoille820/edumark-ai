@@ -3,15 +3,11 @@
   "outputDirectory": "frontend/dist",
   "rewrites": [
     {
-      "source": "/api/(.*)",
+      "source": "/api-proxy/(.*)",
       "destination": "/api/proxy"
     },
     {
       "source": "/api-proxy",
-      "destination": "/api/proxy"
-    },
-    {
-      "source": "/api-proxy/(.*)",
       "destination": "/api/proxy"
     },
     {
