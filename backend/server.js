@@ -12,7 +12,7 @@ import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createToken, requireAuth } from './auth.js';
-import { initDb, findUser, listUsers, getAssessments, createAssessment, listSubmissions, saveSubmission, usePostgreSQL } from './database.js';
+import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, usePostgreSQL } from './database.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "7mb"}));
@@ -337,6 +337,34 @@ app.post('/api/assessments', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Create assessment error:', err);
     return res.status(500).json({ error: err.message || 'Internal server error creating assessment.' });
+  }
+});
+
+// Update assessment title/description
+app.patch('/api/assessments/:id', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { titleEn, titleGa, descEn, descGa } = req.body;
+  if (!titleEn || !titleGa) {
+    return res.status(400).json({ error: 'titleEn and titleGa are required.' });
+  }
+  try {
+    await updateAssessment(id, { titleEn, titleGa, descEn: descEn ?? '', descGa: descGa ?? '' });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Update assessment error:', err);
+    return res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Delete assessment
+app.delete('/api/assessments/:id', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  try {
+    await deleteAssessment(id);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('Delete assessment error:', err);
+    return res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
   }
 });
 

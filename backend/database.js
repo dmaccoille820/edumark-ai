@@ -746,3 +746,37 @@ export function getSubmissions(studentId = null) {
 export function createSubmission(submission) {
   return saveSubmission(submission);
 }
+
+export function updateAssessment(id, { titleEn, titleGa, descEn, descGa }) {
+  if (usePostgreSQL) {
+    return pool.query(
+      `UPDATE assessments
+       SET title_en = $1, title_ga = $2, description_en = $3, description_ga = $4
+       WHERE id = $5`,
+      [titleEn, titleGa, descEn, descGa, id]
+    ).then(res => {
+      if (res.rowCount === 0) throw new Error(`Assessment ${id} not found`);
+      return { id, titleEn, titleGa, descEn, descGa };
+    });
+  } else {
+    const info = db.prepare(`
+      UPDATE assessments
+      SET title_en = @titleEn, title_ga = @titleGa,
+          description_en = @descEn, description_ga = @descGa
+      WHERE id = @id
+    `).run({ id, titleEn, titleGa, descEn, descGa });
+    if (info.changes === 0) throw new Error(`Assessment ${id} not found`);
+    return { id, titleEn, titleGa, descEn, descGa };
+  }
+}
+
+export function deleteAssessment(id) {
+  if (usePostgreSQL) {
+    return pool.query('DELETE FROM assessments WHERE id = $1', [id]).then(res => {
+      if (res.rowCount === 0) throw new Error(`Assessment ${id} not found`);
+    });
+  } else {
+    const info = db.prepare('DELETE FROM assessments WHERE id = ?').run(id);
+    if (info.changes === 0) throw new Error(`Assessment ${id} not found`);
+  }
+}

@@ -50,3 +50,33 @@ export async function getStudents(): Promise<User[]> {
 export function clearSession() {
   localStorage.removeItem(tokenKey);
 }
+
+export interface AssessmentPatch {
+  titleEn: string;
+  titleGa: string;
+  descEn: string;
+  descGa: string;
+}
+
+export async function updateAssessment(id: string, patch: AssessmentPatch): Promise<void> {
+  const response = await fetch(`/api/assessments/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update assessment.');
+  }
+}
+
+export async function deleteAssessment(id: string): Promise<void> {
+  const response = await fetch(`/api/assessments/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete assessment.');
+  }
+}
