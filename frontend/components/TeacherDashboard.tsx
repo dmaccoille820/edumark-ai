@@ -3,7 +3,7 @@ import { Search, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookO
 import { User, Assessment, Submission } from '../types';
 import edumarkLogo from '../edumark.jpg';
 
-import { generateAssessmentFromPdfs, generateAssessmentFromFactFiles } from '../services/aiService';
+import { generateAssessmentFromPdfs, generateAssessmentFromMultipleFactFiles } from '../services/aiService';
 import { getSubmissions, updateAssessment, deleteAssessment } from '../services/api';
 
 interface TeacherDashboardProps {
@@ -51,6 +51,26 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [gaPdf, setGaPdf] = useState<File | null>(null);
   const [msPdf, setMsPdf] = useState<File | null>(null);
 
+  // Multi-PDF Fact File pairs: each entry = { en: File | null, ga: File | null }
+  interface FactFilePair { en: File | null; ga: File | null; }
+  const [factFilePairs, setFactFilePairs] = useState<FactFilePair[]>([{ en: null, ga: null }]);
+
+  const MAX_PAIRS = 5;
+
+  const handleAddPair = () => {
+    if (factFilePairs.length < MAX_PAIRS) {
+      setFactFilePairs(prev => [...prev, { en: null, ga: null }]);
+    }
+  };
+
+  const handleRemovePair = (index: number) => {
+    setFactFilePairs(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handlePairFileChange = (index: number, lang: 'en' | 'ga', file: File | null) => {
+    setFactFilePairs(prev => prev.map((pair, i) => i === index ? { ...pair, [lang]: file } : pair));
+  };
+
   // Calculate max marks for each assessment for easy lookup
   const assessmentMaxMarks = useMemo(() => {
     const map: Record<string, number> = {};
@@ -74,11 +94,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Calculate student averages
   const studentAverages = useMemo(() => {
     const studentUsers = students.filter(u => u.role === 'student');
-    
+
     return studentUsers.map(student => {
       const subs = submissions.filter(s => s.studentId === student.id);
       let totalPercentageSum = 0;
-      
+
       subs.forEach(sub => {
         const maxMarks = assessmentMaxMarks[sub.assessmentId] || 1;
         const score = sub.totalScore || 0;
@@ -147,7 +167,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const rows = subsToExport.map(sub => {
       const student = students.find(u => u.id === sub.studentId);
       const assessment = assessments.find(a => a.id === sub.assessmentId);
-      
+
       if (!student || !assessment) return null;
 
       const maxMarks = assessmentMaxMarks[assessment.id] || 1;
@@ -162,7 +182,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       const detailedFeedbackParts = assessment.questions.map((q, idx) => {
         const studentAnswer = sub.answers[q.id] || '';
         const qFeedback = sub.feedback?.[q.id];
-        
+
         let answerStr = '';
         if (q.type === 'mcq') {
           const optIdx = parseInt(studentAnswer, 10);
@@ -229,23 +249,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setErrorLog('Validation Error: Please upload all three required PDF documents.');
       return;
     }
-    if (assessmentSource === 'fact_file' && (!enPdf || !gaPdf)) {
-      setErrorLog('Validation Error: Please upload both English and Irish Fact File PDFs.');
-      return;
+    if (assessmentSource === 'fact_file') {
+      const incompletePairs = factFilePairs.some(p => !p.en || !p.ga);
+      if (factFilePairs.length === 0 || incompletePairs) {
+        setErrorLog('Validation Error: Each Fact File pair must have both an English and an Irish PDF uploaded.');
+        return;
+      }
     }
 
     setIsProcessing(true);
 
     try {
-      const enBase64 = await fileToBase64(enPdf!);
-      const gaBase64 = await fileToBase64(gaPdf!);
-      
       let questions;
       if (assessmentSource === 'exam') {
+        const enBase64 = await fileToBase64(enPdf!);
+        const gaBase64 = await fileToBase64(gaPdf!);
         const msBase64 = await fileToBase64(msPdf!);
         questions = await generateAssessmentFromPdfs(enBase64, gaBase64, msBase64);
       } else {
-        questions = await generateAssessmentFromFactFiles(enBase64, gaBase64);
+        // Convert all EN and GA pairs to base64 in order
+        const enBase64s = await Promise.all(factFilePairs.map(p => fileToBase64(p.en!)));
+        const gaBase64s = await Promise.all(factFilePairs.map(p => fileToBase64(p.ga!)));
+        questions = await generateAssessmentFromMultipleFactFiles(enBase64s, gaBase64s);
       }
 
       const assessmentId = `a_${Date.now()}`;
@@ -282,7 +307,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       const savedAssessment = await res.json();
       setAssessments([...assessments, savedAssessment]);
-      
+
       // Reset form
       setIsCreating(false);
       setTitleEn('');
@@ -292,8 +317,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       setEnPdf(null);
       setGaPdf(null);
       setMsPdf(null);
+      setFactFilePairs([{ en: null, ga: null }]);
       setAssessmentSource('exam');
-      
+
       alert('Assessment successfully generated and added to the database!');
     } catch (err: any) {
       console.error("Full error caught in component:", err);
@@ -331,7 +357,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-        
+
         {/* Header Actions */}
         <div className="flex justify-between items-end">
           <div>
@@ -380,30 +406,28 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 <h3 className="font-semibold text-slate-800">Generate Assessment from PDFs</h3>
               </div>
             </div>
-            
+
             {/* Source Type Selection Tabs */}
             <div className="flex border-b border-slate-200 bg-slate-50/50">
               <button
                 type="button"
                 onClick={() => setAssessmentSource('exam')}
-                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${
-                  assessmentSource === 'exam'
+                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${assessmentSource === 'exam'
                     ? 'border-primary text-primary'
                     : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+                  }`}
               >
                 Standard Exam + Mark Scheme
               </button>
               <button
                 type="button"
                 onClick={() => setAssessmentSource('fact_file')}
-                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${
-                  assessmentSource === 'fact_file'
+                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${assessmentSource === 'fact_file'
                     ? 'border-primary text-primary'
                     : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                }`}
+                  }`}
               >
-                Fact Files (No Mark Scheme)
+                Fact Files — Multi-PDF (up to 5 pairs no MS)
               </button>
             </div>
 
@@ -431,26 +455,96 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                 </div>
               </div>
 
-              <div className={`grid ${assessmentSource === 'exam' ? 'md:grid-cols-3' : 'md:grid-cols-2'} gap-4 pt-4 border-t border-slate-100`}>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    {assessmentSource === 'exam' ? '1. English Assessment (PDF)' : '1. English Fact File (PDF)'}
-                  </label>
-                  <input type="file" accept="application/pdf" required onChange={e => setEnPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    {assessmentSource === 'exam' ? '2. Irish Assessment (PDF)' : '2. Irish Fact File (PDF)'}
-                  </label>
-                  <input type="file" accept="application/pdf" required onChange={e => setGaPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
-                </div>
-                {assessmentSource === 'exam' && (
+              {assessmentSource === 'exam' ? (
+                /* ── Standard Exam: EN + GA + Mark Scheme ── */
+                <div className="grid md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">1. English Assessment (PDF)</label>
+                    <input type="file" accept="application/pdf" required onChange={e => setEnPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">2. Irish Assessment (PDF)</label>
+                    <input type="file" accept="application/pdf" required onChange={e => setGaPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
+                  </div>
                   <div>
                     <label className="block text-sm font-medium text-slate-700 mb-1">3. Mark Scheme (PDF)</label>
-                    <input type="file" accept="application/pdf" required={assessmentSource === 'exam'} onChange={e => setMsPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
+                    <input type="file" accept="application/pdf" required onChange={e => setMsPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
                   </div>
-                )}
-              </div>
+                </div>
+              ) : (
+                /* ── Multi-PDF Fact Files: up to 5 EN + GA pairs ── */
+                <div className="pt-4 border-t border-slate-100 space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Fact File Pairs</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        Upload up to {MAX_PAIRS} EN + GA pairs. The AI will generate questions covering
+                        <strong> every</strong> fact file so no topic is left untested.
+                      </p>
+                    </div>
+                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${factFilePairs.length >= MAX_PAIRS
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-green-50 text-primary'
+                      }`}>
+                      {factFilePairs.length} / {MAX_PAIRS} pairs
+                    </span>
+                  </div>
+
+                  {factFilePairs.map((pair, idx) => (
+                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-lg p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                          Fact File {idx + 1}
+                        </span>
+                        {factFilePairs.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePair(idx)}
+                            className="text-xs text-danger hover:text-red-700 font-medium flex items-center gap-1 transition-colors"
+                          >
+                            <X className="w-3 h-3" /> Remove
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid md:grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">
+                            English PDF {pair.en && <span className="text-primary font-semibold">✓ {pair.en.name}</span>}
+                          </label>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            onChange={e => handlePairFileChange(idx, 'en', e.target.files?.[0] || null)}
+                            className="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-slate-600 mb-1">
+                            Irish (GA) PDF {pair.ga && <span className="text-primary font-semibold">✓ {pair.ga.name}</span>}
+                          </label>
+                          <input
+                            type="file"
+                            accept="application/pdf"
+                            onChange={e => handlePairFileChange(idx, 'ga', e.target.files?.[0] || null)}
+                            className="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {factFilePairs.length < MAX_PAIRS && (
+                    <button
+                      type="button"
+                      onClick={handleAddPair}
+                      className="w-full py-2.5 border-2 border-dashed border-slate-300 hover:border-primary text-slate-500 hover:text-primary text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
+                    >
+                      <PlusCircle className="w-4 h-4" />
+                      Add Another Fact File Pair
+                    </button>
+                  )}
+                </div>
+              )}
 
               {errorLog && (
                 <div className="p-4 bg-danger/5 border border-danger/20 rounded-lg overflow-hidden">
@@ -657,10 +751,9 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                     <td className="px-6 py-4 text-slate-600">{stat.assessmentsTaken}</td>
                     <td className="px-6 py-4">
                       {stat.assessmentsTaken > 0 ? (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${
-                          stat.averagePercentage >= 70 ? 'bg-success/10 text-success' : 
-                          stat.averagePercentage >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
-                        }`}>
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${stat.averagePercentage >= 70 ? 'bg-success/10 text-success' :
+                            stat.averagePercentage >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
+                          }`}>
                           {stat.averagePercentage}%
                         </span>
                       ) : (

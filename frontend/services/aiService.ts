@@ -198,33 +198,94 @@ export const generateAssessmentFromPdfs = async (
   }
 };
 
-export const generateAssessmentFromFactFiles = async (
-  enPdfBase64: string,
-  gaPdfBase64: string
+/**
+ * Generates a bilingual assessment from up to 5 English + 5 Irish FactFile PDF pairs.
+ * The AI is explicitly instructed to include questions covering content from EVERY
+ * supplied fact file so that no topic is left untested.
+ *
+ * @param enPdfsBase64 - Array of base64-encoded English FactFile PDFs (1–5)
+ * @param gaPdfsBase64 - Array of base64-encoded Irish FactFile PDFs (1–5, same order as EN)
+ */
+export const generateAssessmentFromMultipleFactFiles = async (
+  enPdfsBase64: string[],
+  gaPdfsBase64: string[]
 ): Promise<Question[]> => {
+  const pairCount = enPdfsBase64.length;
+
   const prompt = `
-    You are an expert curriculum designer and bilingual educator. I am providing 2 PDF documents:
-    1. A Fact File in English, which contains information and a list of questions at the end.
-    2. The exact same Fact File in Irish (Gaeilge), containing the translated information and questions.
+    You are an expert curriculum designer and bilingual educator.
+
+    I am providing ${pairCount} English FactFile PDF(s) followed by ${pairCount} Irish (Gaeilge) FactFile PDF(s).
+    Each English PDF is the direct translation of the corresponding Irish PDF (Pair 1 EN = Pair 1 GA, etc.).
+
+    CRITICAL REQUIREMENT — FULL COVERAGE:
+    You MUST generate questions that test content from EVERY single fact file provided.
+    Do not focus on only one or two files. Spread the questions proportionally so that each
+    fact file (each topic/pair) has at least 2 questions dedicated to it. Clearly draw on
+    the specific facts, figures, and details unique to each individual file.
 
     Since there is no provided mark scheme, you must:
-    - Extract all questions and their maximum marks (usually 1 mark for MCQs, or 2-4 marks for written questions depending on complexity).
-    - Correlate the English questions with their exact Irish translations.
-    - If a question is multiple choice (MCQ), extract the options in both languages, and determine the correct answer index (0-based) based on the Fact File content.
-    - If a question is a written answer, read the Fact File content, formulate the ideal correct/acceptable answers, and generate a clear, detailed mark scheme in both English and Irish.
-    
-    Output a JSON object containing a "questions" array.
+    - Assign max marks: typically 1 mark for MCQs, 2–4 marks for written questions depending on complexity.
+    - Correlate English questions with their exact Irish translations using the paired GA documents.
+    - For MCQ questions: extract options in both languages and determine the correct answer index (0-based) from the fact file content.
+    - For written questions: read the fact file content, formulate ideal acceptable answers, and generate a clear, detailed mark scheme in BOTH English and Irish.
+
+    Output a JSON object containing a "questions" array covering all ${pairCount} fact file pair(s).
   `;
 
+  // Build the parts array: all EN PDFs first, then all GA PDFs, then the prompt
+  const pdfParts: Array<{ inlineData: { mimeType: string; data: string } }> = [
+    ...enPdfsBase64.map(data => ({ inlineData: { mimeType: 'application/pdf', data } })),
+    ...gaPdfsBase64.map(data => ({ inlineData: { mimeType: 'application/pdf', data } })),
+  ];
+
+  const questionSchema = {
+    type: Type.OBJECT,
+    properties: {
+      id: { type: Type.STRING, description: 'A unique ID like q1, q2, etc.' },
+      type: { type: Type.STRING, description: 'Must be exactly "mcq" or "written"' },
+      text: {
+        type: Type.OBJECT,
+        properties: {
+          en: { type: Type.STRING },
+          ga: { type: Type.STRING }
+        },
+        required: ['en', 'ga']
+      },
+      maxMarks: { type: Type.INTEGER },
+      options: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            en: { type: Type.STRING },
+            ga: { type: Type.STRING }
+          },
+          required: ['en', 'ga']
+        },
+        description: 'Only include if type is "mcq"'
+      },
+      correctAnswerIndex: { type: Type.INTEGER, description: 'Only include if type is "mcq"' },
+      markScheme: {
+        type: Type.OBJECT,
+        properties: {
+          en: { type: Type.STRING },
+          ga: { type: Type.STRING }
+        },
+        description: 'Only include if type is "written"'
+      }
+    },
+    required: ['id', 'type', 'text', 'maxMarks']
+  };
+
   try {
-    console.log("Sending Fact File generation request to Gemini...");
+    console.log(`Sending ${pairCount} FactFile pair(s) to Gemini for assessment generation...`);
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash',
       contents: {
         role: 'user',
         parts: [
-          { inlineData: { mimeType: 'application/pdf', data: enPdfBase64 } },
-          { inlineData: { mimeType: 'application/pdf', data: gaPdfBase64 } },
+          ...pdfParts,
           { text: prompt }
         ]
       },
@@ -235,44 +296,7 @@ export const generateAssessmentFromFactFiles = async (
           properties: {
             questions: {
               type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING, description: 'A unique ID like q1, q2, etc.' },
-                  type: { type: Type.STRING, description: 'Must be exactly "mcq" or "written"' },
-                  text: {
-                    type: Type.OBJECT,
-                    properties: {
-                      en: { type: Type.STRING },
-                      ga: { type: Type.STRING }
-                    },
-                    required: ['en', 'ga']
-                  },
-                  maxMarks: { type: Type.INTEGER },
-                  options: {
-                    type: Type.ARRAY,
-                    items: {
-                      type: Type.OBJECT,
-                      properties: {
-                        en: { type: Type.STRING },
-                        ga: { type: Type.STRING }
-                      },
-                      required: ['en', 'ga']
-                    },
-                    description: 'Only include if type is "mcq"'
-                  },
-                  correctAnswerIndex: { type: Type.INTEGER, description: 'Only include if type is "mcq"' },
-                  markScheme: {
-                    type: Type.OBJECT,
-                    properties: {
-                      en: { type: Type.STRING },
-                      ga: { type: Type.STRING }
-                    },
-                    description: 'Only include if type is "written"'
-                  }
-                },
-                required: ['id', 'type', 'text', 'maxMarks']
-              }
+              items: questionSchema
             }
           },
           required: ['questions']
@@ -287,11 +311,11 @@ export const generateAssessmentFromFactFiles = async (
 
     let jsonStr = response.text.trim();
     console.log("Raw response from Gemini:", jsonStr);
-    
+
     if (jsonStr.startsWith('```')) {
       jsonStr = jsonStr.replace(/^```(?:json)?\n?/, '').replace(/```$/, '').trim();
     }
-    
+
     try {
       const parsed = JSON.parse(jsonStr);
       if (!parsed.questions || !Array.isArray(parsed.questions)) {
@@ -303,7 +327,7 @@ export const generateAssessmentFromFactFiles = async (
       throw new Error(`JSON Parse Error: ${parseError.message}\n\nRaw Output from AI:\n${jsonStr}`);
     }
   } catch (error: any) {
-    console.error('Error generating assessment from Fact Files:', error);
-    throw new Error(error.message || 'Failed to parse Fact Files and generate assessment.');
+    console.error('Error generating assessment from multiple FactFiles:', error);
+    throw new Error(error.message || 'Failed to parse FactFiles and generate assessment.');
   }
 };
