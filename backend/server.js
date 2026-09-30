@@ -15,7 +15,7 @@ import { createToken, requireAuth } from './auth.js';
 import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, usePostgreSQL } from './database.js';
 
 const app = express();
-app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "7mb"}));
+app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "50mb"}));
 
 // Initialize database
 initDb().catch(err => console.error('Database connection failed:', err));
