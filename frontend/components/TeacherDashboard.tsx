@@ -228,6 +228,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     URL.revokeObjectURL(url);
   };
 
+
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -240,6 +241,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       reader.onerror = (error) => reject(error);
     });
   };
+
 
   const handleCreateAssessment = async (e: React.FormEvent) => {
     e.preventDefault();

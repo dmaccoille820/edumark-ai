@@ -4,6 +4,7 @@ import { Question, AnswerFeedback } from '../types';
 // Initialize the SDK. Assumes process.env.API_KEY is available in the environment.
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY, vertexai: true });
 
+
 export const gradeWrittenAnswer = async (
   question: Question,
   studentAnswer: string
