@@ -63,6 +63,9 @@ function initializeSQLite() {
       correct_answer_index INTEGER,
       mark_scheme_en TEXT,
       mark_scheme_ga TEXT,
+      image_en TEXT,
+      image_ga TEXT,
+      mark_scheme_image TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
@@ -86,6 +89,10 @@ function initializeSQLite() {
       UNIQUE(submission_id, question_id)
     );
   `);
+
+  try { db.exec('ALTER TABLE questions ADD COLUMN image_en TEXT'); } catch {}
+  try { db.exec('ALTER TABLE questions ADD COLUMN image_ga TEXT'); } catch {}
+  try { db.exec('ALTER TABLE questions ADD COLUMN mark_scheme_image TEXT'); } catch {}
 
   // Migrate legacy users or seed default users
   const seedUser = db.prepare(`
@@ -405,7 +412,9 @@ export function getAssessments() {
             id: q.id,
             type: q.type,
             text: { en: q.text_en, ga: q.text_ga },
-            maxMarks: q.max_marks
+            maxMarks: q.max_marks,
+            image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
+            markSchemeImage: q.mark_scheme_image || undefined
           };
           if (q.type === 'mcq') {
             item.options = q.options;
@@ -434,7 +443,9 @@ export function getAssessments() {
           id: q.id,
           type: q.type,
           text: { en: q.text_en, ga: q.text_ga },
-          maxMarks: q.max_marks
+          maxMarks: q.max_marks,
+          image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
+          markSchemeImage: q.mark_scheme_image || undefined
         };
         if (q.type === 'mcq') {
           item.options = JSON.parse(q.options_json);
@@ -468,8 +479,8 @@ export function createAssessment(assessment) {
         for (let i = 0; i < assessment.questions.length; i++) {
           const q = assessment.questions[i];
           await client.query(
-            `INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options, correct_answer_index, mark_scheme_en, mark_scheme_ga, sort_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            `INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options, correct_answer_index, mark_scheme_en, mark_scheme_ga, image_en, image_ga, mark_scheme_image, sort_order)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
             [
               q.id,
               assessment.id,
@@ -481,6 +492,9 @@ export function createAssessment(assessment) {
               q.type === 'mcq' ? q.correctAnswerIndex : null,
               q.type === 'written' ? q.markScheme?.en : null,
               q.type === 'written' ? q.markScheme?.ga : null,
+              q.image?.en || null,
+              q.image?.ga || null,
+              q.markSchemeImage || null,
               i
             ]
           );
@@ -501,8 +515,8 @@ export function createAssessment(assessment) {
       VALUES (@id, @title_en, @title_ga, @description_en, @description_ga)
     `);
     const insertQuestion = db.prepare(`
-      INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options_json, correct_answer_index, mark_scheme_en, mark_scheme_ga, sort_order)
-      VALUES (@id, @assessment_id, @type, @text_en, @text_ga, @max_marks, @options_json, @correct_answer_index, @mark_scheme_en, @mark_scheme_ga, @sort_order)
+      INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options_json, correct_answer_index, mark_scheme_en, mark_scheme_ga, image_en, image_ga, mark_scheme_image, sort_order)
+      VALUES (@id, @assessment_id, @type, @text_en, @text_ga, @max_marks, @options_json, @correct_answer_index, @mark_scheme_en, @mark_scheme_ga, @image_en, @image_ga, @mark_scheme_image, @sort_order)
     `);
     
     const runTransaction = db.transaction((assess, questions) => {
@@ -526,6 +540,9 @@ export function createAssessment(assessment) {
           correct_answer_index: q.type === 'mcq' ? q.correctAnswerIndex : null,
           mark_scheme_en: q.type === 'written' ? q.markScheme?.en : null,
           mark_scheme_ga: q.type === 'written' ? q.markScheme?.ga : null,
+          image_en: q.image?.en || null,
+          image_ga: q.image?.ga || null,
+          mark_scheme_image: q.markSchemeImage || null,
           sort_order: i
         });
       }

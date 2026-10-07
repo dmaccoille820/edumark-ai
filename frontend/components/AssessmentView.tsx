@@ -15,13 +15,11 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
 }) => {
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
-  
-  // Track language preference per question and for the header
   const [headerLang, setHeaderLang] = useState<'en' | 'ga'>('en');
   const [questionLangs, setQuestionLangs] = useState<Record<string, 'en' | 'ga'>>({});
 
   const getQuestionLang = (id: string) => questionLangs[id] || 'en';
-  
+
   const toggleQuestionLang = (id: string) => {
     setQuestionLangs(prev => ({
       ...prev,
@@ -38,20 +36,19 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
     const unanswered = assessment.questions.filter((q) => !answers[q.id] || answers[q.id].trim() === '');
     if (unanswered.length > 0) {
       if (!window.confirm(`You have ${unanswered.length} unanswered questions. Are you sure you want to submit?`)) {
         return;
       }
     }
-
     setIsSubmitting(true);
     onSubmit(answers);
   };
 
   const renderQuestion = (question: Question, index: number) => {
     const lang = getQuestionLang(question.id);
+    const diagramSrc = question.image?.[lang] || question.image?.en || question.image?.ga;
 
     return (
       <div key={question.id} className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
@@ -79,16 +76,29 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
           </span>
         </div>
 
+        {/* Question Diagram / Image */}
+        {diagramSrc && (
+          <div className="my-4 p-3 bg-slate-50 border border-slate-200 rounded-lg flex flex-col items-center">
+            <img
+              src={diagramSrc}
+              alt="Question diagram"
+              className="max-h-80 max-w-full object-contain rounded border border-slate-300 shadow-sm"
+            />
+            <span className="text-xs text-slate-400 mt-1 italic">
+              {lang === 'en' ? 'Figure / Diagram' : 'Fíor / Léaráid'}
+            </span>
+          </div>
+        )}
+
         {question.type === 'mcq' && question.options && (
           <div className="space-y-3 mt-4">
             {question.options.map((option, i) => (
               <label
                 key={i}
-                className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${
-                  answers[question.id] === i.toString()
+                className={`flex items-center p-3 border rounded-lg cursor-pointer transition-colors ${answers[question.id] === i.toString()
                     ? 'border-primary bg-primary/5'
                     : 'border-slate-200 hover:bg-slate-50'
-                }`}
+                  }`}
               >
                 <input
                   type="radio"
@@ -115,8 +125,8 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
             />
             <p className="text-xs text-slate-400 mt-2 flex items-center gap-1">
               <AlertCircle className="w-3 h-3" />
-              {lang === 'en' 
-                ? "Your answer will be evaluated by AI based on the mark scheme. You can answer in English or Irish." 
+              {lang === 'en'
+                ? "Your answer will be evaluated by AI based on the mark scheme. You can answer in English or Irish."
                 : "Déanfaidh AI do fhreagra a mheas bunaithe ar an scéim mharcála. Is féidir leat freagra a thabhairt i mBéarla nó i nGaeilge."}
             </p>
           </div>
@@ -165,7 +175,7 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="bg-primary hover:bg-green-800 text-white font-medium px-6 py-3 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+              className="bg-primary hover:bg-blue-700 text-white font-medium px-6 py-3 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
             >
               {isSubmitting ? (
                 <>{headerLang === 'en' ? 'Processing...' : 'Ag Próiseáil...'}</>

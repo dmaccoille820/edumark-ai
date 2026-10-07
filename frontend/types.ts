@@ -3,9 +3,8 @@ export interface User {
   email: string;
   name: string;
   role: 'student' | 'teacher';
-  examNumber?: string; // For students
-  teacherId?: string; // For teachers
-  accessId?: string;
+  examNumber?: string;
+  teacherId?: string;
 }
 
 export interface BilingualText {
@@ -20,11 +19,14 @@ export interface Question {
   type: QuestionType;
   text: BilingualText;
   maxMarks: number;
-  // For MCQ
   options?: BilingualText[];
   correctAnswerIndex?: number;
-  // For Written
   markScheme?: BilingualText;
+  image?: {
+    en?: string;
+    ga?: string;
+  };
+  markSchemeImage?: string;
 }
 
 export interface Assessment {
@@ -44,10 +46,10 @@ export interface Submission {
   id: string;
   studentId: string;
   assessmentId: string;
-  answers: Record<string, string>; // questionId -> student's answer (for MCQ, it's the option index as a string)
+  answers: Record<string, string>;
   status: 'pending' | 'graded';
   totalScore?: number;
-  feedback?: Record<string, AnswerFeedback>; // questionId -> feedback
+  feedback?: Record<string, AnswerFeedback>;
   submittedAt: string;
 }
 

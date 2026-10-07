@@ -30,8 +30,15 @@ CREATE TABLE IF NOT EXISTS questions (
     correct_answer_index INTEGER,
     mark_scheme_en TEXT,
     mark_scheme_ga TEXT,
+    image_en TEXT,
+    image_ga TEXT,
+    mark_scheme_image TEXT,
     sort_order INTEGER NOT NULL DEFAULT 0
 );
+
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_en TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_ga TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS mark_scheme_image TEXT;
 
 -- 4. Submissions Table
 CREATE TABLE IF NOT EXISTS submissions (

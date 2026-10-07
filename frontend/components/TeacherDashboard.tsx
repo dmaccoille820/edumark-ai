@@ -1,10 +1,32 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Search, Download, LogOut, BarChart3, PlusCircle, FileUp, Loader2, BookOpen, AlertTriangle, Pencil, Trash2, Check, X } from 'lucide-react';
-import { User, Assessment, Submission } from '../types';
+import {
+  Search,
+  Download,
+  LogOut,
+  BarChart3,
+  PlusCircle,
+  FileUp,
+  Loader2,
+  BookOpen,
+  AlertTriangle,
+  Pencil,
+  Trash2,
+  Check,
+  X,
+  Image as ImageIcon
+} from 'lucide-react';
+import { User, Assessment, Submission, Question } from '../types';
 import edumarkLogo from '../edumark.jpg';
 
-import { generateAssessmentFromPdfs, generateAssessmentFromMultipleFactFiles } from '../services/aiService';
-import { getSubmissions, updateAssessment, deleteAssessment } from '../services/api';
+import {
+  generateAssessmentFromPdfs,
+  generateAssessmentFromMultipleFactFiles
+} from '../services/aiService';
+import {
+  getSubmissions,
+  updateAssessment,
+  deleteAssessment
+} from '../services/api';
 
 interface TeacherDashboardProps {
   teacher: User;
@@ -54,7 +76,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   // Multi-PDF Fact File pairs: each entry = { en: File | null, ga: File | null }
   interface FactFilePair { en: File | null; ga: File | null; }
   const [factFilePairs, setFactFilePairs] = useState<FactFilePair[]>([{ en: null, ga: null }]);
-
   const MAX_PAIRS = 5;
 
   const handleAddPair = () => {
@@ -70,6 +91,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const handlePairFileChange = (index: number, lang: 'en' | 'ga', file: File | null) => {
     setFactFilePairs(prev => prev.map((pair, i) => i === index ? { ...pair, [lang]: file } : pair));
   };
+
+  // Staged questions for reviewing and attaching diagrams before final save
+  const [stagedQuestions, setStagedQuestions] = useState<Question[] | null>(null);
+  const [stagedAssessmentId, setStagedAssessmentId] = useState<string>('');
 
   // Calculate max marks for each assessment for easy lookup
   const assessmentMaxMarks = useMemo(() => {
@@ -210,7 +235,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     const csvContent = [headers.join(','), ...rows].join('\n');
 
     // Prepend UTF-8 BOM so Excel on Windows reads the file correctly
-    // without it, Excel falls back to Windows-1252 and mangles diacritics and curly quotes.
     const BOM = '\uFEFF';
     const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -228,7 +252,6 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     URL.revokeObjectURL(url);
   };
 
-
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -242,8 +265,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     });
   };
 
+  const fileToDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
+    });
+  };
 
-  const handleCreateAssessment = async (e: React.FormEvent) => {
+  const handleExtractQuestions = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorLog('');
 
@@ -262,33 +293,46 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     setIsProcessing(true);
 
     try {
-      let questions;
+      let rawQuestions: Question[];
       if (assessmentSource === 'exam') {
         const enBase64 = await fileToBase64(enPdf!);
         const gaBase64 = await fileToBase64(gaPdf!);
         const msBase64 = await fileToBase64(msPdf!);
-        questions = await generateAssessmentFromPdfs(enBase64, gaBase64, msBase64);
+        rawQuestions = await generateAssessmentFromPdfs(enBase64, gaBase64, msBase64);
       } else {
-        // Convert all EN and GA pairs to base64 in order
         const enBase64s = await Promise.all(factFilePairs.map(p => fileToBase64(p.en!)));
         const gaBase64s = await Promise.all(factFilePairs.map(p => fileToBase64(p.ga!)));
-        questions = await generateAssessmentFromMultipleFactFiles(enBase64s, gaBase64s);
+        rawQuestions = await generateAssessmentFromMultipleFactFiles(enBase64s, gaBase64s);
       }
 
-      const assessmentId = `a_${Date.now()}`;
+      const newId = `a_${Date.now()}`;
+      setStagedAssessmentId(newId);
 
       // Prefix question IDs with the assessment ID to avoid PK collisions
-      // (AI returns generic ids like q1, q2 which clash with seed data)
-      const prefixedQuestions = questions.map((q: any) => ({
+      const prefixedQuestions: Question[] = rawQuestions.map((q: any) => ({
         ...q,
-        id: `${assessmentId}_${q.id}`
+        id: `${newId}_${q.id}`
       }));
 
+      setStagedQuestions(prefixedQuestions);
+    } catch (err: any) {
+      console.error("Full error caught in component:", err);
+      setErrorLog(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleSaveAssessment = async () => {
+    if (!stagedQuestions) return;
+
+    try {
+      const assessmentId = stagedAssessmentId || `a_${Date.now()}`;
       const newAssessment: Assessment = {
         id: assessmentId,
         title: { en: titleEn, ga: titleGa },
         description: { en: descEn, ga: descGa },
-        questions: prefixedQuestions
+        questions: stagedQuestions
       };
 
       // Save to database
@@ -308,10 +352,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       }
 
       const savedAssessment = await res.json();
-      setAssessments([...assessments, savedAssessment]);
+      setAssessments(prev => [...prev, savedAssessment]);
 
-      // Reset form
+      // Reset form & staged state
       setIsCreating(false);
+      setStagedQuestions(null);
+      setStagedAssessmentId('');
       setTitleEn('');
       setTitleGa('');
       setDescEn('');
@@ -324,15 +370,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
       alert('Assessment successfully generated and added to the database!');
     } catch (err: any) {
-      console.error("Full error caught in component:", err);
+      console.error("Error saving assessment:", err);
       setErrorLog(err instanceof Error ? err.message : String(err));
-    } finally {
-      setIsProcessing(false);
     }
   };
 
   return (
     <div className="min-h-screen bg-slate-50">
+      {/* Header */}
       <header className="bg-white shadow-sm border-b border-slate-200">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
@@ -345,7 +390,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm text-slate-600 font-medium">
-              {teacher.name} ({teacher.accessId || teacher.teacherId})
+              {teacher.name} ({teacher.teacherId})
             </span>
             <button
               onClick={onLogout}
@@ -359,16 +404,18 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       </header>
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
-
-        {/* Header Actions */}
-        <div className="flex justify-between items-end">
+        {/* Top Actions */}
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
           <div>
             <h2 className="text-2xl font-bold text-slate-800">Assessment Overview</h2>
-            <p className="text-slate-500 mt-1">Manage assessments, view student performance, and export results.</p>
+            <p className="text-slate-500 mt-1">Manage assessments, attach diagrams, and export student performance.</p>
           </div>
-          <div className="flex gap-3 items-center flex-wrap justify-end">
+          <div className="flex flex-wrap items-center gap-3">
             <button
-              onClick={() => setIsCreating(!isCreating)}
+              onClick={() => {
+                setIsCreating(!isCreating);
+                setStagedQuestions(null);
+              }}
               className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
             >
               <PlusCircle className="w-4 h-4" />
@@ -377,15 +424,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
 
             {/* Assessment selector for export */}
             <select
-              id="export-assessment-select"
               value={exportAssessmentId}
               onChange={e => setExportAssessmentId(e.target.value)}
-              aria-label="Select assessment to export"
-              className="border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-700 bg-white focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors max-w-[220px]"
+              className="bg-white border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+              title="Filter export by assessment"
             >
-              <option value="">All assessments</option>
+              <option value="">All Assessments</option>
               {assessments.map(a => (
-                <option key={a.id} value={a.id}>{a.title.en}</option>
+                <option key={a.id} value={a.id}>
+                  {a.title.en}
+                </option>
               ))}
             </select>
 
@@ -402,223 +450,463 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         {/* Create Assessment Form */}
         {isCreating && (
           <section className="bg-white rounded-xl shadow-sm border border-primary/20 overflow-hidden">
-            <div className="p-5 border-b border-slate-200 bg-green-50/50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <FileUp className="w-5 h-5 text-primary" />
-                <h3 className="font-semibold text-slate-800">Generate Assessment from PDFs</h3>
-              </div>
+            <div className="p-5 border-b border-slate-200 bg-green-50/50 flex items-center gap-2">
+              <FileUp className="w-5 h-5 text-primary" />
+              <h3 className="font-semibold text-slate-800">
+                {stagedQuestions ? 'Attach Diagrams & Finalize Assessment' : 'Generate Assessment with AI'}
+              </h3>
             </div>
 
-            {/* Source Type Selection Tabs */}
-            <div className="flex border-b border-slate-200 bg-slate-50/50">
-              <button
-                type="button"
-                onClick={() => setAssessmentSource('exam')}
-                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${assessmentSource === 'exam'
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                  }`}
-              >
-                Standard Exam + Mark Scheme
-              </button>
-              <button
-                type="button"
-                onClick={() => setAssessmentSource('fact_file')}
-                className={`flex-1 py-3 text-center text-sm font-semibold border-b-2 transition-colors ${assessmentSource === 'fact_file'
-                    ? 'border-primary text-primary'
-                    : 'border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300'
-                  }`}
-              >
-                Fact Files — Multi-PDF (up to 5 pairs no MS)
-              </button>
-            </div>
-
-            <form onSubmit={handleCreateAssessment} className="p-6 space-y-6">
-              <div className="grid md:grid-cols-2 gap-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Title (English)</label>
-                    <input type="text" required value={titleEn} onChange={e => setTitleEn(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none" placeholder="e.g., Midterm Exam" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Description (English)</label>
-                    <textarea required value={descEn} onChange={e => setDescEn(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none" rows={2} />
-                  </div>
-                </div>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Title (Irish)</label>
-                    <input type="text" required value={titleGa} onChange={e => setTitleGa(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none" placeholder="e.g., Scrúdú Lárthéarma" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">Description (Irish)</label>
-                    <textarea required value={descGa} onChange={e => setDescGa(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none" rows={2} />
-                  </div>
-                </div>
-              </div>
-
-              {assessmentSource === 'exam' ? (
-                /* ── Standard Exam: EN + GA + Mark Scheme ── */
-                <div className="grid md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">1. English Assessment (PDF)</label>
-                    <input type="file" accept="application/pdf" required onChange={e => setEnPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">2. Irish Assessment (PDF)</label>
-                    <input type="file" accept="application/pdf" required onChange={e => setGaPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-slate-700 mb-1">3. Mark Scheme (PDF)</label>
-                    <input type="file" accept="application/pdf" required onChange={e => setMsPdf(e.target.files?.[0] || null)} className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100" />
-                  </div>
-                </div>
-              ) : (
-                /* ── Multi-PDF Fact Files: up to 5 EN + GA pairs ── */
-                <div className="pt-4 border-t border-slate-100 space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">Fact File Pairs</p>
-                      <p className="text-xs text-slate-500 mt-0.5">
-                        Upload up to {MAX_PAIRS} EN + GA pairs. The AI will generate questions covering
-                        <strong> every</strong> fact file so no topic is left untested.
-                      </p>
-                    </div>
-                    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full ${factFilePairs.length >= MAX_PAIRS
-                        ? 'bg-amber-100 text-amber-700'
-                        : 'bg-green-50 text-primary'
-                      }`}>
-                      {factFilePairs.length} / {MAX_PAIRS} pairs
-                    </span>
-                  </div>
-
-                  {factFilePairs.map((pair, idx) => (
-                    <div key={idx} className="bg-slate-50 border border-slate-200 rounded-lg p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <span className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
-                          Fact File {idx + 1}
-                        </span>
-                        {factFilePairs.length > 1 && (
-                          <button
-                            type="button"
-                            onClick={() => handleRemovePair(idx)}
-                            className="text-xs text-danger hover:text-red-700 font-medium flex items-center gap-1 transition-colors"
-                          >
-                            <X className="w-3 h-3" /> Remove
-                          </button>
-                        )}
+            {!stagedQuestions ? (
+              <form onSubmit={handleExtractQuestions} className="p-6 space-y-6">
+                {/* Source type selector */}
+                <div>
+                  <label className="block text-sm font-semibold text-slate-700 mb-2">
+                    Assessment Source Material
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button
+                      type="button"
+                      onClick={() => setAssessmentSource('exam')}
+                      className={`p-4 rounded-lg border-2 text-left transition-all ${
+                        assessmentSource === 'exam'
+                          ? 'border-primary bg-green-50/60 text-slate-900 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+                      }`}
+                    >
+                      <div className="font-semibold text-sm">Exam Papers &amp; Mark Scheme</div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        Upload English Exam PDF, Irish Exam PDF, and Mark Scheme PDF.
                       </div>
-                      <div className="grid md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1">
-                            English PDF {pair.en && <span className="text-primary font-semibold">✓ {pair.en.name}</span>}
-                          </label>
-                          <input
-                            type="file"
-                            accept="application/pdf"
-                            onChange={e => handlePairFileChange(idx, 'en', e.target.files?.[0] || null)}
-                            className="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
-                          />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAssessmentSource('fact_file')}
+                      className={`p-4 rounded-lg border-2 text-left transition-all ${
+                        assessmentSource === 'fact_file'
+                          ? 'border-primary bg-green-50/60 text-slate-900 shadow-sm'
+                          : 'border-slate-200 hover:border-slate-300 text-slate-600 bg-white'
+                      }`}
+                    >
+                      <div className="font-semibold text-sm">Fact Files (Bilingual Pairs)</div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        Upload up to 5 pairs of English + Irish FactFile PDFs. AI formulates questions and mark schemes from content.
+                      </div>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid md:grid-cols-2 gap-6">
+                  {/* English Metadata */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Title (English)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={titleEn}
+                        onChange={(e) => setTitleEn(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="e.g., Biology: Cell Structure"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Description (English)
+                      </label>
+                      <textarea
+                        required
+                        value={descEn}
+                        onChange={(e) => setDescEn(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+                        rows={2}
+                        placeholder="e.g., Unit 1 assessment covering organelles and cell transport."
+                      />
+                    </div>
+                  </div>
+
+                  {/* Irish Metadata */}
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Title (Irish)
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        value={titleGa}
+                        onChange={(e) => setTitleGa(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+                        placeholder="m.sh., Bitheolaíocht: Struchtúr na Cille"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        Description (Irish)
+                      </label>
+                      <textarea
+                        required
+                        value={descGa}
+                        onChange={(e) => setDescGa(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+                        rows={2}
+                        placeholder="m.sh., Measúnú Aonad 1 a chlúdaíonn orgánaigh agus iompar cille."
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* PDF Upload Sections */}
+                {assessmentSource === 'exam' ? (
+                  <div className="grid md:grid-cols-3 gap-4 pt-4 border-t border-slate-100">
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        1. English Exam Paper (PDF)
+                      </label>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        required
+                        onChange={(e) => setEnPdf(e.target.files?.[0] || null)}
+                        className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        2. Irish Exam Paper (PDF)
+                      </label>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        required
+                        onChange={(e) => setGaPdf(e.target.files?.[0] || null)}
+                        className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-slate-700 mb-1">
+                        3. Mark Scheme (PDF)
+                      </label>
+                      <input
+                        type="file"
+                        accept="application/pdf"
+                        required
+                        onChange={(e) => setMsPdf(e.target.files?.[0] || null)}
+                        className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  /* Fact File Multi-PDF Upload Section */
+                  <div className="space-y-4 pt-4 border-t border-slate-100">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="text-sm font-semibold text-slate-800">
+                          Fact File Pairs ({factFilePairs.length} of {MAX_PAIRS})
+                        </h4>
+                        <p className="text-xs text-slate-500">
+                          Each pair must contain an English Fact File and its corresponding Irish translation. The AI ensures all topics are tested.
+                        </p>
+                      </div>
+                      {factFilePairs.length < MAX_PAIRS && (
+                        <button
+                          type="button"
+                          onClick={handleAddPair}
+                          className="text-xs bg-green-50 text-primary hover:bg-green-100 border border-primary/30 font-semibold px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors"
+                        >
+                          <PlusCircle className="w-3.5 h-3.5" />
+                          Add Topic Pair
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="space-y-3">
+                      {factFilePairs.map((_pair, index) => (
+                        <div
+                          key={index}
+                          className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 space-y-2"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-600 uppercase tracking-wide">
+                              Topic {index + 1}
+                            </span>
+                            {factFilePairs.length > 1 && (
+                              <button
+                                type="button"
+                                onClick={() => handleRemovePair(index)}
+                                className="text-slate-400 hover:text-danger text-xs flex items-center gap-1 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Remove
+                              </button>
+                            )}
+                          </div>
+                          <div className="grid md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 mb-1">
+                                English Fact File (PDF) *
+                              </label>
+                              <input
+                                type="file"
+                                accept="application/pdf"
+                                required
+                                onChange={(e) =>
+                                  handlePairFileChange(index, 'en', e.target.files?.[0] || null)
+                                }
+                                className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-slate-600 mb-1">
+                                Irish Fact File (PDF) *
+                              </label>
+                              <input
+                                type="file"
+                                accept="application/pdf"
+                                required
+                                onChange={(e) =>
+                                  handlePairFileChange(index, 'ga', e.target.files?.[0] || null)
+                                }
+                                className="w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                              />
+                            </div>
+                          </div>
                         </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {errorLog && (
+                  <div className="p-4 bg-danger/5 border border-danger/20 rounded-lg">
+                    <div className="flex items-center gap-2 text-danger font-semibold mb-2">
+                      <AlertTriangle className="w-5 h-5" />
+                      <span>Error Processing PDFs</span>
+                    </div>
+                    <pre className="text-xs text-slate-700 font-mono whitespace-pre-wrap">
+                      {errorLog}
+                    </pre>
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-4">
+                  <button
+                    type="submit"
+                    disabled={isProcessing}
+                    className="bg-primary hover:bg-green-800 text-white font-medium px-6 py-2.5 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
+                  >
+                    {isProcessing ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        Processing PDFs with Gemini...
+                      </>
+                    ) : (
+                      <>
+                        <FileUp className="w-4 h-4" />
+                        Extract Questions &amp; Review
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              /* Staged Questions Diagram Attachment Screen */
+              <div className="p-6 space-y-6">
+                <div className="bg-green-50 p-4 rounded-lg text-sm text-green-900 border border-green-200 flex items-center gap-2">
+                  <ImageIcon className="w-5 h-5 text-primary flex-shrink-0" />
+                  <span>
+                    Questions successfully extracted! Review the questions below. You can optionally attach diagrams or visual figures in English, Irish, or Mark Scheme before saving.
+                  </span>
+                </div>
+
+                <div className="space-y-6 max-h-[600px] overflow-y-auto pr-2">
+                  {stagedQuestions.map((q, idx) => (
+                    <div key={q.id} className="p-4 border border-slate-200 rounded-lg bg-slate-50/50 space-y-3">
+                      <div className="flex justify-between items-start gap-3">
                         <div>
-                          <label className="block text-xs font-medium text-slate-600 mb-1">
-                            Irish (GA) PDF {pair.ga && <span className="text-primary font-semibold">✓ {pair.ga.name}</span>}
+                          <span className="text-xs font-bold uppercase text-slate-400">
+                            Question {idx + 1} ({q.type})
+                          </span>
+                          <p className="font-medium text-slate-800 mt-0.5">{q.text.en}</p>
+                          <p className="text-xs text-slate-500 italic mt-0.5">{q.text.ga}</p>
+                        </div>
+                        <span className="text-xs bg-slate-200 text-slate-700 px-2.5 py-1 rounded-full font-medium shrink-0">
+                          {q.maxMarks} marks
+                        </span>
+                      </div>
+
+                      {/* Image Attachment Section */}
+                      <div className="grid md:grid-cols-3 gap-3 pt-3 border-t border-slate-200 text-xs">
+                        <div>
+                          <label className="font-medium text-slate-700 block mb-1">
+                            English Diagram / Figure
                           </label>
                           <input
                             type="file"
-                            accept="application/pdf"
-                            onChange={e => handlePairFileChange(idx, 'ga', e.target.files?.[0] || null)}
-                            className="w-full text-sm text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                            accept="image/*"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const dataUrl = await fileToDataUrl(file);
+                                q.image = { ...q.image, en: dataUrl };
+                                setStagedQuestions([...stagedQuestions]);
+                              }
+                            }}
+                            className="w-full text-xs text-slate-500 file:py-1 file:px-2 file:rounded file:border-0 file:bg-green-50 file:text-primary hover:file:bg-green-100"
                           />
+                          {q.image?.en && (
+                            <div className="mt-2 relative inline-block">
+                              <img src={q.image.en} alt="EN preview" className="h-16 rounded border object-contain bg-white" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (q.image) delete q.image.en;
+                                  setStagedQuestions([...stagedQuestions]);
+                                }}
+                                className="absolute -top-1 -right-1 bg-danger text-white rounded-full p-0.5"
+                                title="Remove image"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="font-medium text-slate-700 block mb-1">
+                            Irish Diagram / Figure
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const dataUrl = await fileToDataUrl(file);
+                                q.image = { ...q.image, ga: dataUrl };
+                                setStagedQuestions([...stagedQuestions]);
+                              }
+                            }}
+                            className="w-full text-xs text-slate-500 file:py-1 file:px-2 file:rounded file:border-0 file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                          />
+                          {q.image?.ga && (
+                            <div className="mt-2 relative inline-block">
+                              <img src={q.image.ga} alt="GA preview" className="h-16 rounded border object-contain bg-white" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (q.image) delete q.image.ga;
+                                  setStagedQuestions([...stagedQuestions]);
+                                }}
+                                className="absolute -top-1 -right-1 bg-danger text-white rounded-full p-0.5"
+                                title="Remove image"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div>
+                          <label className="font-medium text-slate-700 block mb-1">
+                            Mark Scheme Visual Guide
+                          </label>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                const dataUrl = await fileToDataUrl(file);
+                                q.markSchemeImage = dataUrl;
+                                setStagedQuestions([...stagedQuestions]);
+                              }
+                            }}
+                            className="w-full text-xs text-slate-500 file:py-1 file:px-2 file:rounded file:border-0 file:bg-green-50 file:text-primary hover:file:bg-green-100"
+                          />
+                          {q.markSchemeImage && (
+                            <div className="mt-2 relative inline-block">
+                              <img src={q.markSchemeImage} alt="MS preview" className="h-16 rounded border object-contain bg-white" />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  delete q.markSchemeImage;
+                                  setStagedQuestions([...stagedQuestions]);
+                                }}
+                                className="absolute -top-1 -right-1 bg-danger text-white rounded-full p-0.5"
+                                title="Remove image"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
                   ))}
-
-                  {factFilePairs.length < MAX_PAIRS && (
-                    <button
-                      type="button"
-                      onClick={handleAddPair}
-                      className="w-full py-2.5 border-2 border-dashed border-slate-300 hover:border-primary text-slate-500 hover:text-primary text-sm font-medium rounded-lg flex items-center justify-center gap-2 transition-colors"
-                    >
-                      <PlusCircle className="w-4 h-4" />
-                      Add Another Fact File Pair
-                    </button>
-                  )}
                 </div>
-              )}
 
-              {errorLog && (
-                <div className="p-4 bg-danger/5 border border-danger/20 rounded-lg overflow-hidden">
-                  <div className="flex items-center gap-2 text-danger font-semibold mb-2">
-                    <AlertTriangle className="w-5 h-5" />
-                    <span>Error Processing PDFs</span>
-                  </div>
-                  <div className="bg-white p-3 rounded border border-danger/10 overflow-x-auto max-h-64 overflow-y-auto">
-                    <pre className="text-xs text-slate-700 whitespace-pre-wrap font-mono">
-                      {errorLog}
-                    </pre>
-                  </div>
-                  <p className="text-xs text-danger mt-2">
-                    Check the console for more details. Ensure the PDFs are valid and not password protected.
-                  </p>
+                <div className="flex justify-between items-center pt-4 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setStagedQuestions(null)}
+                    className="text-sm text-slate-500 hover:text-slate-700 font-medium px-4 py-2"
+                  >
+                    &larr; Back to PDF Configuration
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSaveAssessment}
+                    className="bg-primary hover:bg-green-800 text-white font-medium px-6 py-2.5 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <BookOpen className="w-4 h-4" />
+                    Save Assessment to Database
+                  </button>
                 </div>
-              )}
-
-              <div className="flex justify-end pt-4">
-                <button
-                  type="submit"
-                  disabled={isProcessing}
-                  className="bg-primary hover:bg-green-800 text-white font-medium px-6 py-2.5 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-70 disabled:cursor-not-allowed"
-                >
-                  {isProcessing ? (
-                    <><Loader2 className="w-4 h-4 animate-spin" /> Processing PDFs with AI...</>
-                  ) : (
-                    <><BotIcon className="w-4 h-4" /> Generate Assessment</>
-                  )}
-                </button>
               </div>
-            </form>
+            )}
           </section>
         )}
 
         {/* Available Assessments Section */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-5 border-b border-slate-200 bg-slate-50">
-            <div className="flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2">
-                <BookOpen className="w-5 h-5 text-slate-500" />
-                <h3 className="font-semibold text-slate-800">Available Assessments</h3>
-              </div>
-              {/* Teacher assessment search */}
-              <div className="relative w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
-                <input
-                  id="teacher-assessment-search"
-                  type="text"
-                  value={assessmentSearch}
-                  onChange={(e) => setAssessmentSearch(e.target.value)}
-                  placeholder="Filter assessments…"
-                  aria-label="Filter assessments"
-                  className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-primary focus:border-primary outline-none transition-colors"
-                />
-              </div>
+          <div className="p-5 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-2">
+              <BookOpen className="w-5 h-5 text-slate-500" />
+              <h3 className="font-semibold text-slate-800">Available Assessments</h3>
+              <span className="text-xs font-medium text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full">
+                {assessments.length}
+              </span>
+            </div>
+            {/* Search Input */}
+            <div className="relative w-full sm:w-64">
+              <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search assessments..."
+                value={assessmentSearch}
+                onChange={e => setAssessmentSearch(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
+              />
             </div>
           </div>
-          <div className="p-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {filteredAssessments.length === 0 && (
-              <div className="col-span-3 text-center py-10 text-slate-400">
-                <Search className="w-7 h-7 mx-auto mb-2 opacity-40" />
-                <p className="text-sm">No assessments match &ldquo;{assessmentSearch}&rdquo;</p>
-              </div>
-            )}
-            {filteredAssessments.map(assessment => (
-              <div key={assessment.id} className="border border-slate-200 rounded-lg p-4 hover:border-primary/30 transition-colors flex flex-col gap-3">
 
-                {editingId === assessment.id ? (
-                  /* ── Inline edit form ── */
-                  <div className="space-y-2">
-                    <div className="grid grid-cols-2 gap-2">
+          <div className="p-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {filteredAssessments.length === 0 ? (
+              <div className="col-span-full text-center py-8 text-slate-400 text-sm">
+                No assessments found.
+              </div>
+            ) : (
+              filteredAssessments.map(assessment => (
+                <div
+                  key={assessment.id}
+                  className="border border-slate-200 rounded-lg p-4 hover:border-primary/30 transition-colors flex flex-col justify-between gap-3 bg-white"
+                >
+                  {editingId === assessment.id ? (
+                    /* In-place edit form */
+                    <div className="space-y-3">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-primary">Edit Assessment</p>
                       <div>
                         <label className="block text-xs font-medium text-slate-500 mb-0.5">Title (EN)</label>
                         <input
@@ -635,97 +923,97 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                           onChange={e => setEditForm(f => ({ ...f, titleGa: e.target.value }))}
                         />
                       </div>
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-0.5">Description (EN)</label>
-                      <textarea
-                        rows={2}
-                        className="w-full px-2 py-1 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-primary outline-none resize-none"
-                        value={editForm.descEn}
-                        onChange={e => setEditForm(f => ({ ...f, descEn: e.target.value }))}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium text-slate-500 mb-0.5">Description (GA)</label>
-                      <textarea
-                        rows={2}
-                        className="w-full px-2 py-1 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-primary outline-none resize-none"
-                        value={editForm.descGa}
-                        onChange={e => setEditForm(f => ({ ...f, descGa: e.target.value }))}
-                      />
-                    </div>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={() => handleSaveEdit(assessment.id)}
-                        disabled={isSavingEdit || !editForm.titleEn.trim() || !editForm.titleGa.trim()}
-                        className="flex-1 flex items-center justify-center gap-1 bg-primary text-white text-sm font-medium py-1.5 rounded hover:bg-green-800 disabled:opacity-60 transition-colors"
-                      >
-                        {isSavingEdit ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
-                        Save
-                      </button>
-                      <button
-                        onClick={() => setEditingId(null)}
-                        className="flex-1 flex items-center justify-center gap-1 bg-slate-100 text-slate-600 text-sm font-medium py-1.5 rounded hover:bg-slate-200 transition-colors"
-                      >
-                        <X className="w-3 h-3" /> Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : deletingId === assessment.id ? (
-                  /* ── Delete confirmation ── */
-                  <div className="space-y-2">
-                    <p className="text-sm text-slate-700 font-medium">Delete <span className="text-danger">&ldquo;{assessment.title.en}&rdquo;</span>?</p>
-                    <p className="text-xs text-slate-500">This cannot be undone. Existing submissions will lose their assessment link.</p>
-                    <div className="flex gap-2 pt-1">
-                      <button
-                        onClick={() => handleDelete(assessment.id)}
-                        disabled={isDeletingId === assessment.id}
-                        className="flex-1 flex items-center justify-center gap-1 bg-danger text-white text-sm font-medium py-1.5 rounded hover:bg-red-700 disabled:opacity-60 transition-colors"
-                      >
-                        {isDeletingId === assessment.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
-                        Delete
-                      </button>
-                      <button
-                        onClick={() => setDeletingId(null)}
-                        className="flex-1 flex items-center justify-center gap-1 bg-slate-100 text-slate-600 text-sm font-medium py-1.5 rounded hover:bg-slate-200 transition-colors"
-                      >
-                        <X className="w-3 h-3" /> Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  /* ── Normal card view ── */
-                  <>
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0">
-                        <h4 className="font-semibold text-slate-800 truncate" title={assessment.title.en}>{assessment.title.en}</h4>
-                        <p className="text-xs text-slate-500 italic truncate" title={assessment.title.ga}>{assessment.title.ga}</p>
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-0.5">Description (EN)</label>
+                        <textarea
+                          rows={2}
+                          className="w-full px-2 py-1 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-primary outline-none resize-none"
+                          value={editForm.descEn}
+                          onChange={e => setEditForm(f => ({ ...f, descEn: e.target.value }))}
+                        />
                       </div>
-                      <div className="flex gap-1 shrink-0">
+                      <div>
+                        <label className="block text-xs font-medium text-slate-500 mb-0.5">Description (GA)</label>
+                        <textarea
+                          rows={2}
+                          className="w-full px-2 py-1 text-sm border border-slate-300 rounded focus:ring-2 focus:ring-primary outline-none resize-none"
+                          value={editForm.descGa}
+                          onChange={e => setEditForm(f => ({ ...f, descGa: e.target.value }))}
+                        />
+                      </div>
+                      <div className="flex gap-2 pt-1">
                         <button
-                          onClick={() => handleStartEdit(assessment)}
-                          title="Edit assessment"
-                          className="p-1.5 text-slate-400 hover:text-primary hover:bg-green-50 rounded transition-colors"
+                          onClick={() => handleSaveEdit(assessment.id)}
+                          disabled={isSavingEdit || !editForm.titleEn.trim() || !editForm.titleGa.trim()}
+                          className="flex-1 flex items-center justify-center gap-1 bg-primary text-white text-sm font-medium py-1.5 rounded hover:bg-green-800 disabled:opacity-60 transition-colors"
                         >
-                          <Pencil className="w-3.5 h-3.5" />
+                          {isSavingEdit ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                          Save
                         </button>
                         <button
-                          onClick={() => { setEditingId(null); setDeletingId(assessment.id); }}
-                          title="Delete assessment"
-                          className="p-1.5 text-slate-400 hover:text-danger hover:bg-red-50 rounded transition-colors"
+                          onClick={() => setEditingId(null)}
+                          className="flex-1 flex items-center justify-center gap-1 bg-slate-100 text-slate-600 text-sm font-medium py-1.5 rounded hover:bg-slate-200 transition-colors"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <X className="w-3 h-3" /> Cancel
                         </button>
                       </div>
                     </div>
-                    <div className="flex justify-between items-center text-sm mt-auto">
-                      <span className="text-slate-600">{assessment.questions.length} Questions</span>
-                      <span className="font-medium text-primary">{assessmentMaxMarks[assessment.id]} Marks</span>
+                  ) : deletingId === assessment.id ? (
+                    /* Delete confirmation */
+                    <div className="space-y-2">
+                      <p className="text-sm text-slate-700 font-medium">Delete <span className="text-danger">&ldquo;{assessment.title.en}&rdquo;</span>?</p>
+                      <p className="text-xs text-slate-500">This cannot be undone. Existing submissions will lose their assessment link.</p>
+                      <div className="flex gap-2 pt-1">
+                        <button
+                          onClick={() => handleDelete(assessment.id)}
+                          disabled={isDeletingId === assessment.id}
+                          className="flex-1 flex items-center justify-center gap-1 bg-danger text-white text-sm font-medium py-1.5 rounded hover:bg-red-700 disabled:opacity-60 transition-colors"
+                        >
+                          {isDeletingId === assessment.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
+                          Delete
+                        </button>
+                        <button
+                          onClick={() => setDeletingId(null)}
+                          className="flex-1 flex items-center justify-center gap-1 bg-slate-100 text-slate-600 text-sm font-medium py-1.5 rounded hover:bg-slate-200 transition-colors"
+                        >
+                          <X className="w-3 h-3" /> Cancel
+                        </button>
+                      </div>
                     </div>
-                  </>
-                )}
-              </div>
-            ))}
+                  ) : (
+                    /* Normal card view */
+                    <>
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <h4 className="font-semibold text-slate-800 truncate" title={assessment.title.en}>{assessment.title.en}</h4>
+                          <p className="text-xs text-slate-500 italic truncate" title={assessment.title.ga}>{assessment.title.ga}</p>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={() => handleStartEdit(assessment)}
+                            title="Edit assessment"
+                            className="p-1.5 text-slate-400 hover:text-primary hover:bg-green-50 rounded transition-colors"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => { setEditingId(null); setDeletingId(assessment.id); }}
+                            title="Delete assessment"
+                            className="p-1.5 text-slate-400 hover:text-danger hover:bg-red-50 rounded transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex justify-between items-center text-sm mt-auto">
+                        <span className="text-slate-600">{assessment.questions.length} Questions</span>
+                        <span className="font-medium text-primary">{assessmentMaxMarks[assessment.id]} Marks</span>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))
+            )}
           </div>
         </section>
 
@@ -733,34 +1021,32 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
           <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
             <BarChart3 className="w-5 h-5 text-slate-500" />
-            <h3 className="font-semibold text-slate-800">Student Averages</h3>
+            <h3 className="font-semibold text-slate-800">Student Performance</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-6 py-3 font-medium">Student Name</th>
-                  <th className="px-6 py-3 font-medium">Exam Number</th>
-                  <th className="px-6 py-3 font-medium">Assessments Taken</th>
-                  <th className="px-6 py-3 font-medium">Average Score</th>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                  <th className="p-4">Student</th>
+                  <th className="p-4">Exam Number</th>
+                  <th className="p-4 text-center">Assessments Completed</th>
+                  <th className="p-4 text-right">Average Score</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {studentAverages.map((stat) => (
-                  <tr key={stat.student.id} className="hover:bg-slate-50/50">
-                    <td className="px-6 py-4 font-medium text-slate-800">{stat.student.name}</td>
-                    <td className="px-6 py-4 text-slate-600">{stat.student.examNumber}</td>
-                    <td className="px-6 py-4 text-slate-600">{stat.assessmentsTaken}</td>
-                    <td className="px-6 py-4">
-                      {stat.assessmentsTaken > 0 ? (
-                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${stat.averagePercentage >= 70 ? 'bg-success/10 text-success' :
-                            stat.averagePercentage >= 40 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
-                          }`}>
-                          {stat.averagePercentage}%
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 italic">No data</span>
-                      )}
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {studentAverages.map(({ student, assessmentsTaken, averagePercentage }) => (
+                  <tr key={student.id} className="hover:bg-slate-50/50">
+                    <td className="p-4 font-medium text-slate-800">{student.name}</td>
+                    <td className="p-4 text-slate-500">{student.examNumber}</td>
+                    <td className="p-4 text-center text-slate-600">{assessmentsTaken}</td>
+                    <td className="p-4 text-right">
+                      <span className={`inline-block font-semibold px-2 py-0.5 rounded text-xs ${
+                        averagePercentage >= 70 ? 'bg-success/10 text-success' :
+                        averagePercentage >= 40 ? 'bg-warning/10 text-warning' :
+                        'bg-danger/10 text-danger'
+                      }`}>
+                        {averagePercentage}%
+                      </span>
                     </td>
                   </tr>
                 ))}
@@ -775,66 +1061,48 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <h3 className="font-semibold text-slate-800">All Submissions</h3>
           </div>
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-slate-500 border-b border-slate-200">
-                <tr>
-                  <th className="px-6 py-3 font-medium">Date</th>
-                  <th className="px-6 py-3 font-medium">Student</th>
-                  <th className="px-6 py-3 font-medium">Assessment</th>
-                  <th className="px-6 py-3 font-medium">Score</th>
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 text-xs font-semibold text-slate-400 uppercase tracking-wider bg-slate-50/50">
+                  <th className="p-4">Student</th>
+                  <th className="p-4">Assessment</th>
+                  <th className="p-4">Date</th>
+                  <th className="p-4 text-right">Score</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
-                {submissions.length === 0 ? (
-                  <tr>
-                    <td colSpan={4} className="px-6 py-8 text-center text-slate-500 italic">
-                      No submissions recorded yet.
-                    </td>
-                  </tr>
-                ) : (
-                  [...submissions].reverse().map((sub) => {
-                    const student = students.find(u => u.id === sub.studentId);
-                    const assessment = assessments.find(a => a.id === sub.assessmentId);
-                    const maxMarks = assessment ? assessmentMaxMarks[assessment.id] : 1;
-                    const percentage = Math.round(((sub.totalScore || 0) / maxMarks) * 100);
+              <tbody className="divide-y divide-slate-100 text-sm">
+                {submissions.map(sub => {
+                  const student = students.find(u => u.id === sub.studentId);
+                  const assessment = assessments.find(a => a.id === sub.assessmentId);
+                  const maxMarks = assessmentMaxMarks[sub.assessmentId] || 1;
+                  const score = sub.totalScore || 0;
+                  const percentage = Math.round((score / maxMarks) * 100);
 
-                    return (
-                      <tr key={sub.id} className="hover:bg-slate-50/50">
-                        <td className="px-6 py-4 text-slate-600">
-                          {new Date(sub.submittedAt).toLocaleDateString()}
-                        </td>
-                        <td className="px-6 py-4">
-                          <div className="font-medium text-slate-800">{student?.name || 'Unknown'}</div>
-                          <div className="text-xs text-slate-500">{student?.examNumber}</div>
-                        </td>
-                        <td className="px-6 py-4 text-slate-800">
-                          {assessment?.title.en || 'Unknown Assessment'}
-                        </td>
-                        <td className="px-6 py-4 font-medium">
-                          {percentage}% <span className="text-slate-400 text-xs font-normal">({sub.totalScore}/{maxMarks})</span>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
+                  return (
+                    <tr key={sub.id} className="hover:bg-slate-50/50">
+                      <td className="p-4">
+                        <div className="font-medium text-slate-800">{student?.name || 'Unknown Student'}</div>
+                        <div className="text-xs text-slate-400">{student?.examNumber}</div>
+                      </td>
+                      <td className="p-4 text-slate-600">{assessment?.title.en || 'Unknown Assessment'}</td>
+                      <td className="p-4 text-slate-400 text-xs">{new Date(sub.submittedAt).toLocaleDateString()}</td>
+                      <td className="p-4 text-right">
+                        <span className={`inline-block font-semibold px-2 py-0.5 rounded text-xs ${
+                          percentage >= 70 ? 'bg-success/10 text-success' :
+                          percentage >= 40 ? 'bg-warning/10 text-warning' :
+                          'bg-danger/10 text-danger'
+                        }`}>
+                          {score} / {maxMarks} ({percentage}%)
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
         </section>
-
       </main>
     </div>
   );
 };
-
-// Helper icon component for the button
-const BotIcon = ({ className }: { className?: string }) => (
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
-    <path d="M12 8V4H8" />
-    <rect width="16" height="12" x="4" y="8" rx="2" />
-    <path d="M2 14h2" />
-    <path d="M20 14h2" />
-    <path d="M15 13v2" />
-    <path d="M9 13v2" />
-  </svg>
-);

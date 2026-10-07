@@ -6,105 +6,14 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// In-memory fallback database state
 const MEMORY_DB = {
   users: [
     { id: 's1', email: 'student@school.edu', name: 'Alex Johnson', role: 'student', exam_number: 'EXAM123', teacher_id: null },
     { id: 's2', email: 'jane@school.edu', name: 'Jane Smith', role: 'student', exam_number: 'EXAM456', teacher_id: null },
     { id: 't1', email: 'teacher@school.edu', name: 'Mr. Davis', role: 'teacher', exam_number: null, teacher_id: 'TEACH999' }
   ],
-  assessments: [
-    {
-      id: 'a1',
-      title: { en: 'Introduction to Biology', ga: 'Réamhrá don Bhitheolaíocht' },
-      description: { en: 'A brief assessment covering basic biological concepts.', ga: 'Measúnú gairid a chlúdaíonn buneilimintí bitheolaíochta.' },
-      questions: [
-        {
-          id: 'q1',
-          type: 'mcq',
-          text: { en: 'Which organelle is known as the powerhouse of the cell?', ga: 'Cén t-organán a dtugtar teach cumhachta na cille air?' },
-          maxMarks: 1,
-          options: [
-            { en: 'Nucleus', ga: 'Núicléas' },
-            { en: 'Mitochondria', ga: 'Miteacoindre' },
-            { en: 'Ribosome', ga: 'Ribeasóm' },
-            { en: 'Endoplasmic Reticulum', ga: 'Líonra Ionplásmach' }
-          ],
-          correctAnswerIndex: 1
-        },
-        {
-          id: 'q2',
-          type: 'written',
-          text: { en: 'Explain the basic process of photosynthesis in plants.', ga: 'Mínigh bunphróiseas na fótaisintéise i bplandaí.' },
-          maxMarks: 3,
-          markScheme: {
-            en: 'Award 1 mark for mentioning sunlight/light energy. Award 1 mark for mentioning the conversion of carbon dioxide and water. Award 1 mark for mentioning the production of glucose/sugar and oxygen.',
-            ga: 'Bronn marc amháin as fuinneamh gréine/solais a lua. Bronn marc amháin as tiontú dé-ocsaíd charbóin agus uisce a lua. Bronn marc amháin as táirgeadh glúcóis/siúcra agus ocsaigine a lua.'
-          }
-        },
-        {
-          id: 'q3',
-          type: 'written',
-          text: { en: 'Describe the difference between a prokaryotic and a eukaryotic cell.', ga: 'Déan cur síos ar an difríocht idir cill phrócarótach agus cill eocarótach.' },
-          maxMarks: 2,
-          markScheme: {
-            en: 'Award 1 mark for stating eukaryotic cells have a membrane-bound nucleus. Award 1 mark for stating prokaryotic cells lack a membrane-bound nucleus (or lack membrane-bound organelles).',
-            ga: 'Bronn marc amháin as a rá go bhfuil núicléas scannán-cheangailte ag cealla eocarótacha. Bronn marc amháin as a rá nach bhfuil núicléas scannán-cheangailte ag cealla prócarótacha.'
-          }
-        }
-      ]
-    },
-    {
-      id: 'a2',
-      title: { en: 'Computer Science 101', ga: 'Ríomheolaíocht 101' },
-      description: { en: 'Basic programming and hardware concepts.', ga: 'Buneilimintí ríomhchlárúcháin agus crua-earraí.' },
-      questions: [
-        {
-          id: 'q4',
-          type: 'mcq',
-          text: { en: 'What does CPU stand for?', ga: 'Cad a sheasann CPU dó?' },
-          maxMarks: 1,
-          options: [
-            { en: 'Central Process Unit', ga: 'Aonad Próisis Lárnach' },
-            { en: 'Computer Personal Unit', ga: 'Aonad Pearsanta Ríomhaire' },
-            { en: 'Central Processing Unit', ga: 'Láraonad Próiseála' },
-            { en: 'Central Processor Unit', ga: 'Aonad Próiseálaí Lárnach' }
-          ],
-          correctAnswerIndex: 2
-        },
-        {
-          id: 'q5',
-          type: 'written',
-          text: { en: 'Explain what a variable is in programming.', ga: 'Mínigh cad is athróg ann sa ríomhchlárú.' },
-          maxMarks: 2,
-          markScheme: {
-            en: 'Award 1 mark for describing it as a storage location or container. Award 1 mark for mentioning it holds data/values that can change during program execution.',
-            ga: 'Bronn marc amháin as é a mhíniú mar shuíomh stórála nó coimeádán. Bronn marc amháin as a lua go gcoinníonn sé sonraí/luachanna is féidir a athrú le linn rith an chláir.'
-          }
-        }
-      ]
-    }
-  ],
-  submissions: [
-    {
-      id: 'sub_1',
-      studentId: 's2',
-      assessmentId: 'a1',
-      answers: {
-        'q1': '1',
-        'q2': 'Plants use sunlight to turn water and carbon dioxide into oxygen and glucose.',
-        'q3': 'Eukaryotic cells have a nucleus, prokaryotic cells do not.'
-      },
-      status: 'graded',
-      totalScore: 6,
-      feedback: {
-        'q1': { score: 1, commentEn: 'Correct.', commentGa: 'Ceart.' },
-        'q2': { score: 3, commentEn: 'Excellent answer covering all points.', commentGa: 'Freagra den scoth a chlúdaíonn na pointí go léir.' },
-        'q3': { score: 2, commentEn: 'Correct distinction.', commentGa: 'Idirdhealú ceart.' }
-      },
-      submittedAt: new Date(Date.now() - 86400000).toISOString()
-    }
-  ]
+  assessments: [],
+  submissions: []
 };
 
 let pool = null;
@@ -121,22 +30,20 @@ export const initDb = async () => {
     pool = new pg.Pool({
       connectionString: dbUrl,
       ssl: {
-        rejectUnauthorized: false // Required for Neon serverless connections
+        rejectUnauthorized: false
       }
     });
 
-    // Test the connection
     const client = await pool.connect();
     client.release();
     usePostgreSQL = true;
     console.log('[Database] Connected to Neon PostgreSQL successfully.');
 
-    // Automatically initialize schema from schema.sql
     const schemaPath = path.join(__dirname, 'schema.sql');
     if (fs.existsSync(schemaPath)) {
       const sql = fs.readFileSync(schemaPath, 'utf8');
       await pool.query(sql);
-      console.log('[Database] Schema initialised / verified.');
+      console.log('[Database] Schema verified.');
     }
   } catch (error) {
     console.error('[Database] Failed to connect to Neon PostgreSQL. Falling back to in-memory.', error.message);
@@ -144,8 +51,6 @@ export const initDb = async () => {
     pool = null;
   }
 };
-
-// Database Abstractions
 
 export const getUser = async (email, accessId) => {
   if (usePostgreSQL) {
@@ -173,7 +78,6 @@ export const getUser = async (email, accessId) => {
       throw err;
     }
   } else {
-    // In-memory lookup
     const u = MEMORY_DB.users.find(
       x => x.email.toLowerCase() === email.toLowerCase() && (x.exam_number === accessId || x.teacher_id === accessId)
     );
@@ -245,7 +149,9 @@ export const getAssessments = async () => {
             id: q.id,
             type: q.type,
             text: { en: q.text_en, ga: q.text_ga },
-            maxMarks: q.max_marks
+            maxMarks: q.max_marks,
+            image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
+            markSchemeImage: q.mark_scheme_image || undefined
           };
           if (q.type === 'mcq') {
             item.options = q.options;
@@ -287,8 +193,8 @@ export const createAssessment = async (assessment) => {
       for (let i = 0; i < assessment.questions.length; i++) {
         const q = assessment.questions[i];
         await client.query(
-          `INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options, correct_answer_index, mark_scheme_en, mark_scheme_ga, sort_order)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+          `INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options, correct_answer_index, mark_scheme_en, mark_scheme_ga, image_en, image_ga, mark_scheme_image, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
           [
             q.id,
             assessment.id,
@@ -300,6 +206,9 @@ export const createAssessment = async (assessment) => {
             q.type === 'mcq' ? q.correctAnswerIndex : null,
             q.type === 'written' ? q.markScheme?.en : null,
             q.type === 'written' ? q.markScheme?.ga : null,
+            q.image?.en || null,
+            q.image?.ga || null,
+            q.markSchemeImage || null,
             i
           ]
         );
@@ -316,6 +225,29 @@ export const createAssessment = async (assessment) => {
   } else {
     MEMORY_DB.assessments.push(assessment);
     return assessment;
+  }
+};
+
+export const updateAssessment = async (id, { titleEn, titleGa, descEn, descGa }) => {
+  if (usePostgreSQL) {
+    await pool.query(
+      `UPDATE assessments SET title_en = $1, title_ga = $2, description_en = $3, description_ga = $4 WHERE id = $5`,
+      [titleEn, titleGa, descEn, descGa, id]
+    );
+  } else {
+    const a = MEMORY_DB.assessments.find(x => x.id === id);
+    if (a) {
+      a.title = { en: titleEn, ga: titleGa };
+      a.description = { en: descEn, ga: descGa };
+    }
+  }
+};
+
+export const deleteAssessment = async (id) => {
+  if (usePostgreSQL) {
+    await pool.query('DELETE FROM assessments WHERE id = $1', [id]);
+  } else {
+    MEMORY_DB.assessments = MEMORY_DB.assessments.filter(a => a.id !== id);
   }
 };
 
@@ -340,7 +272,6 @@ export const getSubmissions = async (studentId = null) => {
       const submissions = [];
 
       for (const row of res.rows) {
-        // Fetch feedbacks
         const feedRes = await pool.query('SELECT * FROM feedbacks WHERE submission_id = $1', [row.id]);
         const feedback = {};
         feedRes.rows.forEach(f => {

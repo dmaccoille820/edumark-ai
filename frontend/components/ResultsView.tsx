@@ -13,11 +13,10 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   submission,
   onBack,
 }) => {
-  // Track language preference per question for results (defaults to 'ga' as requested)
   const [resultLangs, setResultLangs] = useState<Record<string, 'en' | 'ga'>>({});
-  
+
   const getLang = (id: string) => resultLangs[id] || 'ga';
-  
+
   const toggleLang = (id: string) => {
     setResultLangs(prev => ({
       ...prev,
@@ -26,8 +25,8 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
   };
 
   const totalPossibleMarks = assessment.questions.reduce((sum, q) => sum + q.maxMarks, 0);
-  const percentage = submission.totalScore !== undefined 
-    ? Math.round((submission.totalScore / totalPossibleMarks) * 100) 
+  const percentage = submission.totalScore !== undefined
+    ? Math.round((submission.totalScore / totalPossibleMarks) * 100)
     : 0;
 
   return (
@@ -45,7 +44,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
       </header>
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Summary Card */}
         <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-8 flex flex-col md:flex-row items-center justify-between gap-6">
           <div>
             <h2 className="text-2xl font-bold text-slate-800 mb-1">{assessment.title.en}</h2>
@@ -54,7 +52,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
               Submitted on {new Date(submission.submittedAt).toLocaleString()}
             </p>
           </div>
-          
+
           <div className="flex items-center gap-6 bg-slate-50 p-4 rounded-lg border border-slate-100">
             <div className="text-center">
               <p className="text-sm text-slate-500 font-medium mb-1">Total Score</p>
@@ -84,11 +82,11 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
             const feedback = submission.feedback?.[question.id];
             const score = feedback?.score || 0;
             const isFullMarks = score === question.maxMarks;
+            const diagramSrc = question.image?.[lang] || question.image?.en || question.image?.ga;
 
-            // Format student answer for display
             let displayAnswer = studentAnswerRaw || (lang === 'en' ? 'No answer provided' : 'Níor cuireadh aon fhreagra ar fáil');
             let isCorrectMcq = false;
-            
+
             if (question.type === 'mcq' && studentAnswerRaw !== undefined) {
               const answerIndex = parseInt(studentAnswerRaw);
               if (!isNaN(answerIndex) && question.options) {
@@ -99,7 +97,6 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
 
             return (
               <div key={question.id} className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-                {/* Question Header */}
                 <div className="bg-slate-50 p-4 border-b border-slate-200 flex justify-between items-start gap-4">
                   <div className="flex-grow">
                     <div className="flex items-center gap-3 mb-2">
@@ -117,14 +114,24 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                     </div>
                     <p className="text-slate-800 font-medium">{question.text[lang]}</p>
                   </div>
-                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold ${
-                    isFullMarks ? 'bg-success/10 text-success' : score > 0 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
-                  }`}>
+                  <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-bold ${isFullMarks ? 'bg-success/10 text-success' : score > 0 ? 'bg-warning/10 text-warning' : 'bg-danger/10 text-danger'
+                    }`}>
                     {score} / {question.maxMarks}
                   </div>
                 </div>
 
                 <div className="p-4 space-y-4">
+                  {/* Diagram attached to question */}
+                  {diagramSrc && (
+                    <div className="mb-4 p-2 bg-slate-50 rounded-lg border border-slate-200 text-center">
+                      <img
+                        src={diagramSrc}
+                        alt="Question diagram"
+                        className="max-h-60 mx-auto object-contain rounded"
+                      />
+                    </div>
+                  )}
+
                   {/* Student Answer */}
                   <div>
                     <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
@@ -146,7 +153,7 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                     </div>
                   </div>
 
-                  {/* Correct Answer / Mark Scheme (if applicable) */}
+                  {/* Correct MCQ Answer */}
                   {question.type === 'mcq' && !isCorrectMcq && question.options && question.correctAnswerIndex !== undefined && (
                     <div>
                       <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 block">
@@ -166,16 +173,30 @@ export const ResultsView: React.FC<ResultsViewProps> = ({
                         <Bot className="w-3.5 h-3.5" />
                         {lang === 'en' ? 'AI Examiner Feedback' : 'Aiseolas ón Scrúdaitheoir AI'}
                       </span>
-                      <div className="p-4 bg-green-50 rounded-lg border border-green-100 text-slate-700 text-sm leading-relaxed">
+                      <div className="p-4 bg-blue-50 rounded-lg border border-blue-100 text-slate-700 text-sm leading-relaxed">
                         {lang === 'en' ? feedback.commentEn : feedback.commentGa}
                       </div>
-                      
+
                       {question.markScheme && (
                         <div className="mt-3">
-                           <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 block">
-                             {lang === 'en' ? 'Mark Scheme Reference' : 'Tagairt don Scéim Mharcála'}
-                           </span>
-                           <p className="text-xs text-slate-500 italic">{question.markScheme[lang]}</p>
+                          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 block">
+                            {lang === 'en' ? 'Mark Scheme Reference' : 'Tagairt don Scéim Mharcála'}
+                          </span>
+                          <p className="text-xs text-slate-500 italic">{question.markScheme[lang]}</p>
+                        </div>
+                      )}
+
+                      {/* Mark Scheme Diagram */}
+                      {question.markSchemeImage && (
+                        <div className="mt-3 p-3 bg-blue-50/40 rounded-lg border border-blue-100 text-center">
+                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1 block">
+                            {lang === 'en' ? 'Mark Scheme Visual Reference' : 'Tagairt Fhíseach don Scéim Mharcála'}
+                          </span>
+                          <img
+                            src={question.markSchemeImage}
+                            alt="Mark Scheme Diagram"
+                            className="max-h-56 mx-auto object-contain rounded border border-blue-200"
+                          />
                         </div>
                       )}
                     </div>
