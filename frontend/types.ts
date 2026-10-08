@@ -40,6 +40,8 @@ export interface AnswerFeedback {
   score: number;
   commentGa: string;
   commentEn: string;
+  studentImage?: string;
+  isAmended?: boolean;
 }
 
 export interface Submission {
@@ -47,10 +49,12 @@ export interface Submission {
   studentId: string;
   assessmentId: string;
   answers: Record<string, string>;
-  status: 'pending' | 'graded';
+  status: 'pending' | 'provisional' | 'graded';
   totalScore?: number;
   feedback?: Record<string, AnswerFeedback>;
   submittedAt: string;
+  amendedAt?: string;
+  teacherNotes?: string;
 }
 
 export type AppState = 'login' | 'dashboard' | 'teacher-dashboard' | 'assessment' | 'grading' | 'results';

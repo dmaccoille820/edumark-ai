@@ -13,7 +13,11 @@ import {
   Trash2,
   Check,
   X,
-  Image as ImageIcon
+  Image as ImageIcon,
+  ChevronDown,
+  ChevronUp,
+  ClipboardEdit,
+  MessageSquare
 } from 'lucide-react';
 import { User, Assessment, Submission, Question } from '../types';
 import edumarkLogo from '../edumark.jpg';
@@ -25,7 +29,9 @@ import {
 import {
   getSubmissions,
   updateAssessment,
-  deleteAssessment
+  deleteAssessment,
+  amendSubmission,
+  AmendmentPayload
 } from '../services/api';
 
 interface TeacherDashboardProps {
@@ -59,6 +65,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+
+  // Amendment state
+  const [expandedSubId, setExpandedSubId] = useState<string | null>(null);
+  const [amendScores, setAmendScores] = useState<Record<string, number>>({});
+  const [amendNotes, setAmendNotes] = useState('');
+  const [isSavingAmendment, setIsSavingAmendment] = useState(false);
 
   useEffect(() => {
     getSubmissions().then(setSubmissions).catch((error) => setErrorLog(error.message));
@@ -178,6 +190,52 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       alert(`Failed to delete: ${err.message}`);
     } finally {
       setIsDeletingId(null);
+    }
+  };
+
+  const handleExpandSub = (sub: Submission, assessment: Assessment | undefined) => {
+    if (expandedSubId === sub.id) {
+      setExpandedSubId(null);
+      return;
+    }
+    setExpandedSubId(sub.id);
+    setAmendNotes(sub.teacherNotes || '');
+    // Pre-populate scores from existing feedback
+    const scores: Record<string, number> = {};
+    if (assessment && sub.feedback) {
+      assessment.questions.forEach(q => {
+        scores[q.id] = sub.feedback?.[q.id]?.score ?? 0;
+      });
+    }
+    setAmendScores(scores);
+  };
+
+  const handleSaveAmendment = async (sub: Submission, assessment: Assessment | undefined) => {
+    if (!assessment) return;
+    setIsSavingAmendment(true);
+    try {
+      const feedbackPayload: AmendmentPayload['feedback'] = {};
+      assessment.questions.forEach(q => {
+        const existing = sub.feedback?.[q.id];
+        feedbackPayload![q.id] = {
+          score: amendScores[q.id] ?? existing?.score ?? 0,
+          commentEn: existing?.commentEn ?? '',
+          commentGa: existing?.commentGa ?? '',
+          isAmended: true,
+        };
+      });
+      const newTotalScore = Object.values(feedbackPayload).reduce((sum, f) => sum + f.score, 0);
+      const updated = await amendSubmission(sub.id, {
+        totalScore: newTotalScore,
+        teacherNotes: amendNotes || undefined,
+        feedback: feedbackPayload,
+      });
+      setSubmissions(prev => prev.map(s => s.id === updated.id ? updated : s));
+      setExpandedSubId(null);
+    } catch (err: any) {
+      alert(`Failed to save amendment: ${err.message}`);
+    } finally {
+      setIsSavingAmendment(false);
     }
   };
 
@@ -885,6 +943,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               <input
                 type="text"
                 placeholder="Search assessments..."
+                aria-label="Filter assessments"
                 value={assessmentSearch}
                 onChange={e => setAssessmentSearch(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all"
@@ -895,7 +954,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           <div className="p-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
             {filteredAssessments.length === 0 ? (
               <div className="col-span-full text-center py-8 text-slate-400 text-sm">
-                No assessments found.
+                No assessments match &ldquo;{assessmentSearch}&rdquo;.
               </div>
             ) : (
               filteredAssessments.map(assessment => (
@@ -1055,10 +1114,11 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
           </div>
         </section>
 
-        {/* Recent Submissions Section */}
+        {/* All Submissions Section */}
         <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-5 border-b border-slate-200 bg-slate-50">
+          <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
             <h3 className="font-semibold text-slate-800">All Submissions</h3>
+            <span className="text-xs text-slate-400 font-medium">Click a row to amend marks</span>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
@@ -1067,35 +1127,154 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <th className="p-4">Student</th>
                   <th className="p-4">Assessment</th>
                   <th className="p-4">Date</th>
+                  <th className="p-4">Status</th>
                   <th className="p-4 text-right">Score</th>
+                  <th className="p-4 w-8"></th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100 text-sm">
+              <tbody className="text-sm">
                 {submissions.map(sub => {
                   const student = students.find(u => u.id === sub.studentId);
                   const assessment = assessments.find(a => a.id === sub.assessmentId);
                   const maxMarks = assessmentMaxMarks[sub.assessmentId] || 1;
                   const score = sub.totalScore || 0;
                   const percentage = Math.round((score / maxMarks) * 100);
+                  const isExpanded = expandedSubId === sub.id;
+                  const isAmended = sub.status === 'graded' && !!sub.amendedAt;
+
+                  const statusBadge = (() => {
+                    if (isAmended) return <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-600"><ClipboardEdit className="w-3 h-3" />Amended</span>;
+                    if (sub.status === 'graded') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-success/10 text-success">Graded</span>;
+                    if (sub.status === 'provisional') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-warning/10 text-warning">Provisional</span>;
+                    return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-slate-100 text-slate-500">Pending</span>;
+                  })();
 
                   return (
-                    <tr key={sub.id} className="hover:bg-slate-50/50">
-                      <td className="p-4">
-                        <div className="font-medium text-slate-800">{student?.name || 'Unknown Student'}</div>
-                        <div className="text-xs text-slate-400">{student?.examNumber}</div>
-                      </td>
-                      <td className="p-4 text-slate-600">{assessment?.title.en || 'Unknown Assessment'}</td>
-                      <td className="p-4 text-slate-400 text-xs">{new Date(sub.submittedAt).toLocaleDateString()}</td>
-                      <td className="p-4 text-right">
-                        <span className={`inline-block font-semibold px-2 py-0.5 rounded text-xs ${
-                          percentage >= 70 ? 'bg-success/10 text-success' :
-                          percentage >= 40 ? 'bg-warning/10 text-warning' :
-                          'bg-danger/10 text-danger'
-                        }`}>
-                          {score} / {maxMarks} ({percentage}%)
-                        </span>
-                      </td>
-                    </tr>
+                    <React.Fragment key={sub.id}>
+                      <tr
+                        className={`border-b border-slate-100 cursor-pointer transition-colors ${
+                          isExpanded ? 'bg-blue-50/40' : 'hover:bg-slate-50/60'
+                        }`}
+                        onClick={() => handleExpandSub(sub, assessment)}
+                      >
+                        <td className="p-4">
+                          <div className="font-medium text-slate-800">{student?.name || 'Unknown Student'}</div>
+                          <div className="text-xs text-slate-400">{student?.examNumber}</div>
+                        </td>
+                        <td className="p-4 text-slate-600">{assessment?.title.en || 'Unknown Assessment'}</td>
+                        <td className="p-4 text-slate-400 text-xs">
+                          <div>{new Date(sub.submittedAt).toLocaleDateString()}</div>
+                          {sub.amendedAt && (
+                            <div className="text-blue-400 mt-0.5">Amended {new Date(sub.amendedAt).toLocaleDateString()}</div>
+                          )}
+                        </td>
+                        <td className="p-4">{statusBadge}</td>
+                        <td className="p-4 text-right">
+                          <span className={`inline-block font-semibold px-2 py-0.5 rounded text-xs ${
+                            percentage >= 70 ? 'bg-success/10 text-success' :
+                            percentage >= 40 ? 'bg-warning/10 text-warning' :
+                            'bg-danger/10 text-danger'
+                          }`}>
+                            {score} / {maxMarks} ({percentage}%)
+                          </span>
+                        </td>
+                        <td className="p-4 text-slate-400">
+                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        </td>
+                      </tr>
+
+                      {/* Amendment panel */}
+                      {isExpanded && assessment && (
+                        <tr className="border-b border-slate-200 bg-blue-50/20">
+                          <td colSpan={6} className="p-0">
+                            <div className="p-5 space-y-4">
+                              <div className="flex items-center gap-2 mb-1">
+                                <ClipboardEdit className="w-4 h-4 text-blue-500" />
+                                <span className="text-sm font-semibold text-slate-700">Amend Marks</span>
+                                <span className="text-xs text-slate-400 ml-1">— adjust scores per question then save</span>
+                              </div>
+
+                              {/* Per-question score inputs */}
+                              <div className="grid gap-2">
+                                {assessment.questions.map((q, idx) => {
+                                  const existing = sub.feedback?.[q.id];
+                                  const currentScore = amendScores[q.id] ?? existing?.score ?? 0;
+                                  return (
+                                    <div key={q.id} className="flex items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
+                                      <div className="flex-1 min-w-0">
+                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Q{idx + 1} · {q.type} · max {q.maxMarks}</p>
+                                        <p className="text-sm text-slate-800 truncate mt-0.5" title={q.text.en}>{q.text.en}</p>
+                                        {existing?.commentEn && (
+                                          <p className="text-xs text-slate-400 italic mt-0.5 truncate">
+                                            <MessageSquare className="w-3 h-3 inline mr-1" />{existing.commentEn}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className="flex items-center gap-1.5 shrink-0">
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); setAmendScores(prev => ({ ...prev, [q.id]: Math.max(0, (prev[q.id] ?? existing?.score ?? 0) - 1) })); }}
+                                          className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-lg leading-none transition-colors"
+                                        >−</button>
+                                        <span className="w-10 text-center font-bold text-slate-800 text-sm">{currentScore}/{q.maxMarks}</span>
+                                        <button
+                                          type="button"
+                                          onClick={(e) => { e.stopPropagation(); setAmendScores(prev => ({ ...prev, [q.id]: Math.min(q.maxMarks, (prev[q.id] ?? existing?.score ?? 0) + 1) })); }}
+                                          className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-lg leading-none transition-colors"
+                                        >+</button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+
+                              {/* New total */}
+                              <div className="flex items-center justify-between text-sm font-semibold text-slate-700 bg-white rounded-lg border border-slate-200 px-4 py-2">
+                                <span>New Total</span>
+                                <span className="text-primary">
+                                  {Object.values(amendScores).reduce((s, v) => s + v, 0)} / {maxMarks}
+                                </span>
+                              </div>
+
+                              {/* Teacher notes */}
+                              <div>
+                                <label className="block text-xs font-semibold text-slate-600 mb-1">
+                                  <MessageSquare className="w-3 h-3 inline mr-1" />Teacher Notes (optional)
+                                </label>
+                                <textarea
+                                  rows={2}
+                                  value={amendNotes}
+                                  onClick={e => e.stopPropagation()}
+                                  onChange={e => setAmendNotes(e.target.value)}
+                                  placeholder="Add internal notes about this amendment…"
+                                  className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
+                                />
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex justify-end gap-3">
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); setExpandedSubId(null); }}
+                                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={isSavingAmendment}
+                                  onClick={(e) => { e.stopPropagation(); handleSaveAmendment(sub, assessment); }}
+                                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                >
+                                  {isSavingAmendment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                  Save Amendment
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
                   );
                 })}
               </tbody>

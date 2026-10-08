@@ -80,3 +80,22 @@ export async function deleteAssessment(id: string): Promise<void> {
     throw new Error(data.error || 'Failed to delete assessment.');
   }
 }
+
+export interface AmendmentPayload {
+  totalScore: number;
+  teacherNotes?: string;
+  feedback?: Record<string, { score: number; commentEn: string; commentGa: string; isAmended: boolean }>;
+}
+
+export async function amendSubmission(id: string, payload: AmendmentPayload): Promise<Submission> {
+  const response = await fetch(`/api/submissions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to amend submission.');
+  }
+  return response.json();
+}

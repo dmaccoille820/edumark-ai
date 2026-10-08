@@ -12,7 +12,7 @@ import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createToken, requireAuth } from './auth.js';
-import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, usePostgreSQL } from './database.js';
+import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, usePostgreSQL } from './database.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "50mb"}));
@@ -353,6 +353,26 @@ app.patch('/api/assessments/:id', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Update assessment error:', err);
     return res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Amend a graded submission (teacher only)
+app.patch('/api/submissions/:id', requireAuth, async (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Only teachers may amend submissions.' });
+  }
+  const { id } = req.params;
+  const { totalScore, feedback, teacherNotes } = req.body;
+  if (typeof totalScore !== 'number') {
+    return res.status(400).json({ error: 'totalScore (number) is required.' });
+  }
+  try {
+    const updated = await updateSubmissionAmendment({ id, totalScore, feedback, teacherNotes });
+    if (!updated) return res.status(404).json({ error: 'Submission not found.' });
+    return res.json(updated);
+  } catch (err) {
+    console.error('Amend submission error:', err);
+    return res.status(500).json({ error: err.message || 'Internal server error amending submission.' });
   }
 });
 

@@ -46,12 +46,15 @@ CREATE TABLE IF NOT EXISTS submissions (
     student_id VARCHAR(50) REFERENCES users (id) ON DELETE SET NULL,
     assessment_id VARCHAR(50) REFERENCES assessments (id) ON DELETE SET NULL,
     answers JSONB NOT NULL,
-    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'graded')),
+    status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'provisional', 'graded')),
     total_score INTEGER,
-    submitted_at TIMESTAMP
-    WITH
-        TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    submitted_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    amended_at TIMESTAMP WITH TIME ZONE,
+    teacher_notes TEXT
 );
+
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS amended_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE submissions ADD COLUMN IF NOT EXISTS teacher_notes TEXT;
 
 -- 5. Detailed Question Feedback Table
 CREATE TABLE IF NOT EXISTS feedbacks (
@@ -61,5 +64,10 @@ CREATE TABLE IF NOT EXISTS feedbacks (
     score INTEGER NOT NULL,
     comment_en TEXT,
     comment_ga TEXT,
+    student_image TEXT,
+    is_amended BOOLEAN DEFAULT FALSE,
     CONSTRAINT unique_sub_question UNIQUE (submission_id, question_id)
 );
+
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS student_image TEXT;
+ALTER TABLE feedbacks ADD COLUMN IF NOT EXISTS is_amended BOOLEAN DEFAULT FALSE;
