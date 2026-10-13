@@ -99,3 +99,25 @@ export async function amendSubmission(id: string, payload: AmendmentPayload): Pr
   }
   return response.json();
 }
+
+export async function deleteSubmission(id: string): Promise<void> {
+  const response = await fetch(`/api/submissions/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete submission.');
+  }
+}
+
+export async function deleteUser(id: string): Promise<void> {
+  const response = await fetch(`/api/users/${id}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to delete user.');
+  }
+}

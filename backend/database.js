@@ -34,6 +34,7 @@ function initializeSQLite() {
   }
   db = new Database(databasePath);
   db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id TEXT PRIMARY KEY,
@@ -71,7 +72,7 @@ function initializeSQLite() {
 
     CREATE TABLE IF NOT EXISTS submissions (
       id TEXT PRIMARY KEY,
-      student_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+      student_id TEXT REFERENCES users(id) ON DELETE CASCADE,
       assessment_id TEXT REFERENCES assessments(id) ON DELETE SET NULL,
       answers_json TEXT NOT NULL,
       status TEXT NOT NULL CHECK (status IN ('pending', 'graded')),
@@ -902,5 +903,63 @@ export function deleteAssessment(id) {
   } else {
     const info = db.prepare('DELETE FROM assessments WHERE id = ?').run(id);
     if (info.changes === 0) throw new Error(`Assessment ${id} not found`);
+  }
+}
+
+export function deleteSubmission(id) {
+  if (usePostgreSQL) {
+    return pool.query('DELETE FROM submissions WHERE id = $1', [id]).then(res => {
+      if (res.rowCount === 0) throw new Error(`Submission ${id} not found`);
+    });
+  } else {
+    const deleteFeedbacks = db.prepare('DELETE FROM feedbacks WHERE submission_id = ?');
+    const deleteSub = db.prepare('DELETE FROM submissions WHERE id = ?');
+    const transaction = db.transaction((subId) => {
+      deleteFeedbacks.run(subId);
+      const info = deleteSub.run(subId);
+      if (info.changes === 0) throw new Error(`Submission ${subId} not found`);
+    });
+    transaction(id);
+  }
+}
+
+export function deleteUser(id) {
+  if (usePostgreSQL) {
+    return (async () => {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        // Delete feedbacks for student's submissions
+        await client.query(`
+          DELETE FROM feedbacks 
+          WHERE submission_id IN (SELECT id FROM submissions WHERE student_id = $1)
+        `, [id]);
+        // Delete student's submissions
+        await client.query('DELETE FROM submissions WHERE student_id = $1', [id]);
+        // Delete the user
+        const res = await client.query('DELETE FROM users WHERE id = $1', [id]);
+        if (res.rowCount === 0) throw new Error(`User ${id} not found`);
+        await client.query('COMMIT');
+      } catch (err) {
+        await client.query('ROLLBACK');
+        throw err;
+      } finally {
+        client.release();
+      }
+    })();
+  } else {
+    const deleteFeedbacks = db.prepare(`
+      DELETE FROM feedbacks 
+      WHERE submission_id IN (SELECT id FROM submissions WHERE student_id = ?)
+    `);
+    const deleteSubs = db.prepare('DELETE FROM submissions WHERE student_id = ?');
+    const deleteUserStmt = db.prepare('DELETE FROM users WHERE id = ?');
+    const transaction = db.transaction((userId) => {
+      deleteFeedbacks.run(userId);
+      deleteSubs.run(userId);
+      const info = deleteUserStmt.run(userId);
+      if (info.changes === 0) throw new Error(`User ${userId} not found`);
+    });
+    transaction(id);
   }
 }

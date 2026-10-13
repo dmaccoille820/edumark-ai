@@ -43,7 +43,7 @@ ALTER TABLE questions ADD COLUMN IF NOT EXISTS mark_scheme_image TEXT;
 -- 4. Submissions Table
 CREATE TABLE IF NOT EXISTS submissions (
     id VARCHAR(50) PRIMARY KEY,
-    student_id VARCHAR(50) REFERENCES users (id) ON DELETE SET NULL,
+    student_id VARCHAR(50) REFERENCES users (id) ON DELETE CASCADE,
     assessment_id VARCHAR(50) REFERENCES assessments (id) ON DELETE SET NULL,
     answers JSONB NOT NULL,
     status VARCHAR(20) NOT NULL CHECK (status IN ('pending', 'provisional', 'graded')),

@@ -32,6 +32,8 @@ import {
   getSubmissions,
   updateAssessment,
   deleteAssessment,
+  deleteSubmission,
+  deleteUser,
   amendSubmission,
   AmendmentPayload
 } from '../services/api';
@@ -53,11 +55,12 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   teacher,
   initialAssessments,
   initialSubmissions,
-  students,
+  students: initialStudents,
   onLogout,
 }) => {
   const [assessments, setAssessments] = useState<Assessment[]>(initialAssessments);
   const [submissions, setSubmissions] = useState<Submission[]>(initialSubmissions);
+  const [students, setStudents] = useState<User[]>(initialStudents);
   const [isCreating, setIsCreating] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [errorLog, setErrorLog] = useState<string>('');
@@ -73,6 +76,10 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [isSavingEdit, setIsSavingEdit] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+  const [deletingSubId, setDeletingSubId] = useState<string | null>(null);
+  const [isDeletingSubId, setIsDeletingSubId] = useState<string | null>(null);
+  const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
+  const [isDeletingStudentId, setIsDeletingStudentId] = useState<string | null>(null);
 
   // Amendment state
   const [expandedSubId, setExpandedSubId] = useState<string | null>(null);
@@ -198,6 +205,34 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
       alert(`Failed to delete: ${err.message}`);
     } finally {
       setIsDeletingId(null);
+    }
+  };
+
+  const handleDeleteSubmission = async (subId: string) => {
+    setIsDeletingSubId(subId);
+    try {
+      await deleteSubmission(subId);
+      setSubmissions(prev => prev.filter(s => s.id !== subId));
+      if (expandedSubId === subId) setExpandedSubId(null);
+      setDeletingSubId(null);
+    } catch (err: any) {
+      alert(`Failed to delete submission: ${err.message}`);
+    } finally {
+      setIsDeletingSubId(null);
+    }
+  };
+
+  const handleDeleteStudent = async (studentId: string) => {
+    setIsDeletingStudentId(studentId);
+    try {
+      await deleteUser(studentId);
+      setStudents(prev => prev.filter(u => u.id !== studentId));
+      setSubmissions(prev => prev.filter(s => s.studentId !== studentId));
+      setDeletingStudentId(null);
+    } catch (err: any) {
+      alert(`Failed to delete student: ${err.message}`);
+    } finally {
+      setIsDeletingStudentId(null);
     }
   };
 
@@ -1066,6 +1101,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                   <th className="p-4">Exam Number</th>
                   <th className="p-4 text-center">Assessments Completed</th>
                   <th className="p-4 text-right">Average Score</th>
+                  <th className="p-4 text-center w-14">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-sm">
@@ -1082,6 +1118,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                       }`}>
                         {averagePercentage}%
                       </span>
+                    </td>
+                    <td className="p-4 text-center">
+                      <button
+                        type="button"
+                        onClick={() => setDeletingStudentId(student.id)}
+                        title={`Delete student ${student.name}`}
+                        className="p-1.5 text-slate-400 hover:text-danger hover:bg-red-50 rounded transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -1154,8 +1200,25 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                             {score} / {maxMarks} ({percentage}%)
                           </span>
                         </td>
-                        <td className="p-4 text-slate-400">
-                          {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                        <td className="p-4 text-right" onClick={e => e.stopPropagation()}>
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setDeletingSubId(sub.id)}
+                              title="Delete submission"
+                              className="p-1.5 text-slate-400 hover:text-danger hover:bg-red-50 rounded transition-colors"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExpandSub(sub, assessment)}
+                              title={isExpanded ? "Collapse" : "Expand"}
+                              className="p-1 text-slate-400 hover:text-slate-600 rounded transition-colors"
+                            >
+                              {isExpanded ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                            </button>
+                          </div>
                         </td>
                       </tr>
 
@@ -1283,23 +1346,37 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                               </div>
 
                               {/* Actions */}
-                              <div className="flex justify-end gap-3">
+                              <div className="flex justify-between items-center pt-2">
                                 <button
                                   type="button"
-                                  onClick={(e) => { e.stopPropagation(); setExpandedSubId(null); }}
-                                  className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeletingSubId(sub.id);
+                                  }}
+                                  className="px-3 py-2 text-sm text-danger hover:bg-red-50 font-medium rounded-lg border border-red-200 transition-colors flex items-center gap-1.5"
+                                  title="Delete this submission"
                                 >
-                                  Cancel
+                                  <Trash2 className="w-4 h-4" />
+                                  Delete Submission
                                 </button>
-                                <button
-                                  type="button"
-                                  disabled={isSavingAmendment}
-                                  onClick={(e) => { e.stopPropagation(); handleSaveAmendment(sub, assessment); }}
-                                  className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
-                                >
-                                  {isSavingAmendment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                  Save Amendment
-                                </button>
+                                <div className="flex gap-3">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => { e.stopPropagation(); setExpandedSubId(null); }}
+                                    className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 font-medium rounded-lg border border-slate-200 hover:bg-slate-100 transition-colors"
+                                  >
+                                    Cancel
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={isSavingAmendment}
+                                    onClick={(e) => { e.stopPropagation(); handleSaveAmendment(sub, assessment); }}
+                                    className="px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 font-medium rounded-lg flex items-center gap-2 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                                  >
+                                    {isSavingAmendment ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                    Save Amendment
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           </td>
@@ -1312,6 +1389,122 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </table>
           </div>
         </section>
+
+        {/* Delete Submission Confirmation Modal */}
+        {deletingSubId && (() => {
+          const subToDelete = submissions.find(s => s.id === deletingSubId);
+          if (!subToDelete) return null;
+          const subStudent = students.find(u => u.id === subToDelete.studentId);
+          const subAssessment = assessments.find(a => a.id === subToDelete.assessmentId);
+
+          return (
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+                <div className="flex items-center gap-3 text-danger">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-danger" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-900 text-lg">Delete Submission?</h3>
+                    <p className="text-xs text-slate-500">This action is permanent and cannot be undone.</p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-sm text-slate-700 space-y-1">
+                  <p>
+                    Student: <strong className="text-slate-900">{subStudent?.name || 'Unknown Student'}</strong> ({subStudent?.examNumber})
+                  </p>
+                  <p>
+                    Assessment: <strong className="text-slate-900">{subAssessment?.title.en || 'Unknown Assessment'}</strong>
+                  </p>
+                  <p className="text-xs text-slate-500 pt-1">
+                    All recorded answers, marks, and AI feedback for this attempt will be permanently removed.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={isDeletingSubId === deletingSubId}
+                    onClick={() => setDeletingSubId(null)}
+                    className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeletingSubId === deletingSubId}
+                    onClick={() => handleDeleteSubmission(subToDelete.id)}
+                    className="px-4 py-2 text-sm font-medium text-white bg-danger hover:bg-red-700 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-60"
+                  >
+                    {isDeletingSubId === deletingSubId ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    Delete Submission
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Delete Student Confirmation Modal */}
+        {deletingStudentId && (() => {
+          const studentToDelete = students.find(s => s.id === deletingStudentId);
+          if (!studentToDelete) return null;
+          const studentSubsCount = submissions.filter(s => s.studentId === deletingStudentId).length;
+
+          return (
+            <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+              <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4 border border-slate-200">
+                <div className="flex items-center gap-3 text-danger">
+                  <div className="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-danger" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-slate-900 text-lg">Delete Student?</h3>
+                    <p className="text-xs text-slate-500">This action is permanent and cannot be undone.</p>
+                  </div>
+                </div>
+
+                <div className="bg-red-50/60 border border-red-200/60 rounded-lg p-3 text-sm text-slate-700 space-y-2">
+                  <p>
+                    Are you sure you want to delete <strong className="text-slate-900">{studentToDelete.name}</strong> ({studentToDelete.examNumber || studentToDelete.email})?
+                  </p>
+                  <p className="text-xs text-red-700 font-medium">
+                    ⚠️ This will cascading-delete all <strong>{studentSubsCount}</strong> completed submission(s), scores, and AI feedback associated with this student.
+                  </p>
+                </div>
+
+                <div className="flex justify-end gap-3 pt-2">
+                  <button
+                    type="button"
+                    disabled={isDeletingStudentId === deletingStudentId}
+                    onClick={() => setDeletingStudentId(null)}
+                    className="px-4 py-2 text-sm font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isDeletingStudentId === deletingStudentId}
+                    onClick={() => handleDeleteStudent(studentToDelete.id)}
+                    className="px-4 py-2 text-sm font-medium text-white bg-danger hover:bg-red-700 rounded-lg flex items-center gap-2 transition-colors disabled:opacity-60"
+                  >
+                    {isDeletingStudentId === deletingStudentId ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                    Delete Student & Submissions
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </main>
     </div>
   );

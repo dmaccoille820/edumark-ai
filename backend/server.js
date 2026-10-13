@@ -12,7 +12,7 @@ import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createToken, requireAuth } from './auth.js';
-import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, usePostgreSQL } from './database.js';
+import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, deleteSubmission, deleteUser, usePostgreSQL } from './database.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "50mb"}));
@@ -384,6 +384,39 @@ app.delete('/api/assessments/:id', requireAuth, async (req, res) => {
     return res.json({ success: true });
   } catch (err) {
     console.error('Delete assessment error:', err);
+    return res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Delete submission (teacher only)
+app.delete('/api/submissions/:id', requireAuth, async (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Only teachers may delete submissions.' });
+  }
+  const { id } = req.params;
+  try {
+    await deleteSubmission(id);
+    return res.json({ success: true, message: 'Submission deleted successfully.' });
+  } catch (err) {
+    console.error('Delete submission error:', err);
+    return res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
+  }
+});
+
+// Delete user with cascading delete of submissions (teacher only)
+app.delete('/api/users/:id', requireAuth, async (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Only teachers may delete users.' });
+  }
+  const { id } = req.params;
+  if (req.user.sub === id) {
+    return res.status(400).json({ error: 'You cannot delete your own account.' });
+  }
+  try {
+    await deleteUser(id);
+    return res.json({ success: true, message: 'User and all associated submissions deleted successfully.' });
+  } catch (err) {
+    console.error('Delete user error:', err);
     return res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
   }
 });
