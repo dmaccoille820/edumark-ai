@@ -17,7 +17,9 @@ import {
   ChevronDown,
   ChevronUp,
   ClipboardEdit,
-  MessageSquare
+  MessageSquare,
+  FileText,
+  Sparkles
 } from 'lucide-react';
 import { User, Assessment, Submission, Question } from '../types';
 import edumarkLogo from '../edumark.jpg';
@@ -469,6 +471,14 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             <p className="text-slate-500 mt-1">Manage assessments, attach diagrams, and export student performance.</p>
           </div>
           <div className="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              onClick={() => document.getElementById('all-submissions')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              className="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <ClipboardEdit className="w-4 h-4" />
+              Amend Marks
+            </button>
             <button
               onClick={() => {
                 setIsCreating(!isCreating);
@@ -1115,7 +1125,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
         </section>
 
         {/* All Submissions Section */}
-        <section className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+        <section id="all-submissions" className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden scroll-mt-6">
           <div className="p-5 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
             <h3 className="font-semibold text-slate-800">All Submissions</h3>
             <span className="text-xs text-slate-400 font-medium">Click a row to amend marks</span>
@@ -1195,33 +1205,88 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                               </div>
 
                               {/* Per-question score inputs */}
-                              <div className="grid gap-2">
+                              <div className="space-y-3">
                                 {assessment.questions.map((q, idx) => {
                                   const existing = sub.feedback?.[q.id];
                                   const currentScore = amendScores[q.id] ?? existing?.score ?? 0;
+                                  const studentAnswerRaw = sub.answers?.[q.id];
+                                  let studentAnswerDisplay = studentAnswerRaw;
+                                  if (q.type === 'mcq' && studentAnswerRaw !== undefined) {
+                                    const optIdx = parseInt(studentAnswerRaw, 10);
+                                    if (!isNaN(optIdx) && q.options && q.options[optIdx]) {
+                                      studentAnswerDisplay = `Option ${optIdx + 1}: ${q.options[optIdx].en}`;
+                                    }
+                                  }
+                                  const hasStudentAnswer = Boolean(studentAnswerDisplay && studentAnswerDisplay.trim() !== '');
+
                                   return (
-                                    <div key={q.id} className="flex items-center gap-3 bg-white rounded-lg border border-slate-200 p-3">
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Q{idx + 1} · {q.type} · max {q.maxMarks}</p>
-                                        <p className="text-sm text-slate-800 truncate mt-0.5" title={q.text.en}>{q.text.en}</p>
-                                        {existing?.commentEn && (
-                                          <p className="text-xs text-slate-400 italic mt-0.5 truncate">
-                                            <MessageSquare className="w-3 h-3 inline mr-1" />{existing.commentEn}
+                                    <div key={q.id} className="bg-white rounded-lg border border-slate-200 p-4 space-y-3 shadow-xs">
+                                      {/* Header: Question info & score stepper */}
+                                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 pb-2 border-b border-slate-100">
+                                        <div className="space-y-1 max-w-3xl">
+                                          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                            Q{idx + 1} · {q.type.toUpperCase()} · max {q.maxMarks}
+                                          </span>
+                                          <p className="text-sm font-medium text-slate-800 leading-relaxed break-words">
+                                            {q.text.en}
                                           </p>
-                                        )}
+                                        </div>
+
+                                        <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 bg-slate-50 px-2.5 py-1.5 rounded-lg border border-slate-200">
+                                          <span className="text-xs font-semibold text-slate-500 mr-1">Score:</span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setAmendScores(prev => ({
+                                                ...prev,
+                                                [q.id]: Math.max(0, (prev[q.id] ?? existing?.score ?? 0) - 1)
+                                              }));
+                                            }}
+                                            className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-base leading-none transition-colors active:scale-95"
+                                            title="Decrease score"
+                                          >−</button>
+                                          <span className="w-12 text-center font-bold text-slate-800 text-sm">
+                                            {currentScore}/{q.maxMarks}
+                                          </span>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setAmendScores(prev => ({
+                                                ...prev,
+                                                [q.id]: Math.min(q.maxMarks, (prev[q.id] ?? existing?.score ?? 0) + 1)
+                                              }));
+                                            }}
+                                            className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 font-bold text-base leading-none transition-colors active:scale-95"
+                                            title="Increase score"
+                                          >+</button>
+                                        </div>
                                       </div>
-                                      <div className="flex items-center gap-1.5 shrink-0">
-                                        <button
-                                          type="button"
-                                          onClick={(e) => { e.stopPropagation(); setAmendScores(prev => ({ ...prev, [q.id]: Math.max(0, (prev[q.id] ?? existing?.score ?? 0) - 1) })); }}
-                                          className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-lg leading-none transition-colors"
-                                        >−</button>
-                                        <span className="w-10 text-center font-bold text-slate-800 text-sm">{currentScore}/{q.maxMarks}</span>
-                                        <button
-                                          type="button"
-                                          onClick={(e) => { e.stopPropagation(); setAmendScores(prev => ({ ...prev, [q.id]: Math.min(q.maxMarks, (prev[q.id] ?? existing?.score ?? 0) + 1) })); }}
-                                          className="w-7 h-7 flex items-center justify-center rounded border border-slate-200 bg-white hover:bg-slate-100 text-slate-600 font-bold text-lg leading-none transition-colors"
-                                        >+</button>
+
+                                      {/* Comparison: Student Answer & AI Feedback */}
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs sm:text-sm">
+                                        {/* Student Answer */}
+                                        <div className="bg-slate-50/80 rounded-lg p-3 border border-slate-200/80 flex flex-col justify-start">
+                                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+                                            <FileText className="w-3.5 h-3.5 text-slate-400" />
+                                            <span>Student Answer</span>
+                                          </div>
+                                          <p className={`break-words whitespace-pre-wrap leading-relaxed ${hasStudentAnswer ? 'text-slate-800' : 'text-slate-400 italic'}`}>
+                                            {hasStudentAnswer ? studentAnswerDisplay : 'No answer provided.'}
+                                          </p>
+                                        </div>
+
+                                        {/* AI Feedback */}
+                                        <div className="bg-blue-50/50 rounded-lg p-3 border border-blue-100 flex flex-col justify-start">
+                                          <div className="flex items-center gap-1.5 text-[11px] font-semibold text-blue-700 uppercase tracking-wider mb-1.5">
+                                            <Sparkles className="w-3.5 h-3.5 text-blue-500" />
+                                            <span>AI Feedback</span>
+                                          </div>
+                                          <p className="text-slate-700 break-words whitespace-pre-wrap leading-relaxed">
+                                            {existing?.commentEn ? existing.commentEn : <span className="text-slate-400 italic">No feedback provided.</span>}
+                                          </p>
+                                        </div>
                                       </div>
                                     </div>
                                   );
