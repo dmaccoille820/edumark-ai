@@ -13,18 +13,19 @@
     "@google/genai": "latest",
     "lucide-react": "latest",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "latest",
+    "@testing-library/react": "latest",
     "@types/node": "latest",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^4.3.4",
-    "@testing-library/jest-dom": "latest",
-    "@testing-library/react": "latest",
+    "jsdom": "^25.0.1",
     "typescript": "latest",
     "vite": "^6.0.5",
-    "vitest": "^2.1.8",
-    "jsdom": "^25.0.1"
+    "vitest": "^2.1.8"
   }
 }

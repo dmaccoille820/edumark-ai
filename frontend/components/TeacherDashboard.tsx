@@ -35,6 +35,11 @@ import {
   amendSubmission,
   AmendmentPayload
 } from '../services/api';
+import {
+  exportToExcel,
+  exportToDetailedCsv,
+  exportToSummaryCsv
+} from '../services/exportService';
 
 interface TeacherDashboardProps {
   teacher: User;
@@ -60,6 +65,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [assessmentSearch, setAssessmentSearch] = useState('');
   // '' means "all assessments"
   const [exportAssessmentId, setExportAssessmentId] = useState('');
+  const [exportFormat, setExportFormat] = useState<'xlsx' | 'csv-detailed' | 'csv-summary'>('xlsx');
 
   // Edit & delete state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -241,75 +247,22 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
     }
   };
 
-  const handleExportCSV = () => {
-    const headers = ['Student Name', 'Email', 'Exam Number', 'Assessment', 'Score (%)', 'Date Submitted', 'Detailed Q&A and Feedback'];
+  const handleExport = () => {
+    const params = {
+      assessments,
+      submissions,
+      students,
+      assessmentMaxMarks,
+      exportAssessmentId
+    };
 
-    // Filter to the selected assessment (or all if none selected)
-    const subsToExport = exportAssessmentId
-      ? submissions.filter(s => s.assessmentId === exportAssessmentId)
-      : submissions;
-
-    const rows = subsToExport.map(sub => {
-      const student = students.find(u => u.id === sub.studentId);
-      const assessment = assessments.find(a => a.id === sub.assessmentId);
-
-      if (!student || !assessment) return null;
-
-      const maxMarks = assessmentMaxMarks[assessment.id] || 1;
-      const score = sub.totalScore || 0;
-      const percentage = Math.round((score / maxMarks) * 100);
-      const date = new Date(sub.submittedAt).toLocaleDateString();
-
-      // Escape double-quotes for CSV
-      const safeTitle = assessment.title.en.replace(/"/g, '""');
-
-      // Build detailed question-by-question Q&A and AI feedback string
-      const detailedFeedbackParts = assessment.questions.map((q, idx) => {
-        const studentAnswer = sub.answers[q.id] || '';
-        const qFeedback = sub.feedback?.[q.id];
-
-        let answerStr = '';
-        if (q.type === 'mcq') {
-          const optIdx = parseInt(studentAnswer, 10);
-          if (!isNaN(optIdx) && q.options && q.options[optIdx]) {
-            answerStr = `Option ${optIdx + 1}: ${q.options[optIdx].en}`;
-          } else {
-            answerStr = studentAnswer;
-          }
-        } else {
-          answerStr = studentAnswer;
-        }
-
-        const scorePart = qFeedback ? `${qFeedback.score}/${q.maxMarks}` : `N/A`;
-        const commentEn = qFeedback ? qFeedback.commentEn : 'No feedback';
-        const commentGa = qFeedback ? qFeedback.commentGa : 'Gan aiseolas';
-
-        return `Q${idx + 1}: ${q.text.en}\n- Answer: ${answerStr}\n- Score: ${scorePart}\n- Feedback (EN): ${commentEn}\n- Feedback (GA): ${commentGa}`;
-      });
-
-      const safeDetailedFeedback = detailedFeedbackParts.join('\n\n').replace(/"/g, '""');
-
-      return `"${student.name}","${student.email}","${student.examNumber}","${safeTitle}","${percentage}%","${date}","${safeDetailedFeedback}"`;
-    }).filter(Boolean);
-
-    const csvContent = [headers.join(','), ...rows].join('\n');
-
-    // Prepend UTF-8 BOM so Excel on Windows reads the file correctly
-    const BOM = '\uFEFF';
-    const blob = new Blob([BOM + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-
-    const selectedAssessment = assessments.find(a => a.id === exportAssessmentId);
-    const fileLabel = selectedAssessment
-      ? selectedAssessment.title.en.replace(/[^a-z0-9]/gi, '_').toLowerCase()
-      : 'all_assessments';
-    link.setAttribute('download', `results_${fileLabel}_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+    if (exportFormat === 'xlsx') {
+      exportToExcel(params);
+    } else if (exportFormat === 'csv-detailed') {
+      exportToDetailedCsv(params);
+    } else {
+      exportToSummaryCsv(params);
+    }
   };
 
   const fileToBase64 = (file: File): Promise<string> => {
@@ -505,12 +458,25 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
               ))}
             </select>
 
+            {/* Export format selector */}
+            <select
+              value={exportFormat}
+              onChange={e => setExportFormat(e.target.value as 'xlsx' | 'csv-detailed' | 'csv-summary')}
+              className="bg-white border border-slate-300 text-slate-700 text-sm font-medium px-3 py-2 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+              title="Choose export format"
+            >
+              <option value="xlsx">Excel (.xlsx) - Full Report</option>
+              <option value="csv-detailed">CSV - Question Breakdown</option>
+              <option value="csv-summary">CSV - Summary Only</option>
+            </select>
+
             <button
-              onClick={handleExportCSV}
-              className="bg-primary hover:bg-green-800 text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+              onClick={handleExport}
+              className="bg-primary hover:bg-green-800 text-white font-medium px-4 py-2 rounded-lg flex items-center gap-2 transition-colors shadow-sm"
+              title={`Download ${exportFormat === 'xlsx' ? 'Excel workbook (.xlsx)' : 'CSV'}`}
             >
               <Download className="w-4 h-4" />
-              Export Results
+              {exportFormat === 'xlsx' ? 'Export to Excel' : 'Export CSV'}
             </button>
           </div>
         </div>
