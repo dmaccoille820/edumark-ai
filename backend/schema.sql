@@ -39,6 +39,8 @@ CREATE TABLE IF NOT EXISTS questions (
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_en TEXT;
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS image_ga TEXT;
 ALTER TABLE questions ADD COLUMN IF NOT EXISTS mark_scheme_image TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_url_en TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS audio_url_ga TEXT;
 
 -- 4. Submissions Table
 CREATE TABLE IF NOT EXISTS submissions (

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Assessment, Question } from '../types';
-import { AlertCircle, Send, Languages } from 'lucide-react';
+import { AlertCircle, Send, Languages, Volume2, VolumeX, Loader2 } from 'lucide-react';
 
 interface AssessmentViewProps {
   assessment: Assessment;
@@ -17,10 +17,78 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [headerLang, setHeaderLang] = useState<'en' | 'ga'>('en');
   const [questionLangs, setQuestionLangs] = useState<Record<string, 'en' | 'ga'>>({});
+  const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [isLoadingAudio, setIsLoadingAudio] = useState<string | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
+    };
+  }, []);
+
+  const toggleAudio = (audioUrl: string | undefined, questionId: string, lang: 'en' | 'ga') => {
+    if (!audioUrl) return;
+
+    const currentKey = `${questionId}_${lang}`;
+
+    if (playingAudioId === currentKey) {
+      if (audioPlayerRef.current) {
+        audioPlayerRef.current.pause();
+        audioPlayerRef.current = null;
+      }
+      setPlayingAudioId(null);
+      return;
+    }
+
+    if (audioPlayerRef.current) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+    }
+
+    setIsLoadingAudio(currentKey);
+    const audio = new Audio(audioUrl);
+    audioPlayerRef.current = audio;
+
+    audio.oncanplay = () => {
+      setIsLoadingAudio(null);
+    };
+
+    audio.onplay = () => {
+      setIsLoadingAudio(null);
+      setPlayingAudioId(currentKey);
+    };
+
+    audio.onended = () => {
+      setPlayingAudioId(null);
+      audioPlayerRef.current = null;
+    };
+
+    audio.onerror = () => {
+      setIsLoadingAudio(null);
+      setPlayingAudioId(null);
+      audioPlayerRef.current = null;
+    };
+
+    audio.play().catch(err => {
+      console.error('Audio play error:', err);
+      setIsLoadingAudio(null);
+      setPlayingAudioId(null);
+    });
+  };
 
   const getQuestionLang = (id: string) => questionLangs[id] || 'en';
 
   const toggleQuestionLang = (id: string) => {
+    // If audio is playing for this question, stop it before switching languages
+    if (audioPlayerRef.current && (playingAudioId?.startsWith(id))) {
+      audioPlayerRef.current.pause();
+      audioPlayerRef.current = null;
+      setPlayingAudioId(null);
+    }
     setQuestionLangs(prev => ({
       ...prev,
       [id]: prev[id] === 'ga' ? 'en' : 'ga'
@@ -66,6 +134,40 @@ export const AssessmentView: React.FC<AssessmentViewProps> = ({
                 <Languages className="w-3.5 h-3.5" />
                 {lang === 'en' ? 'Gaeilge' : 'English'}
               </button>
+
+              {(() => {
+                const audioUrl = lang === 'ga' ? question.audioUrl?.ga : question.audioUrl?.en;
+                if (!audioUrl) return null;
+                const currentKey = `${question.id}_${lang}`;
+                const isPlaying = playingAudioId === currentKey;
+                const isLoading = isLoadingAudio === currentKey;
+
+                return (
+                  <button
+                    type="button"
+                    onClick={() => toggleAudio(audioUrl, question.id, lang)}
+                    className={`flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md transition-colors ${
+                      isPlaying
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200'
+                    }`}
+                    title={lang === 'ga' ? 'Éist leis an cheist (Gaeilge Uladh)' : 'Listen to question (English)'}
+                  >
+                    {isLoading ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : isPlaying ? (
+                      <VolumeX className="w-3.5 h-3.5 text-emerald-700 animate-pulse" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5" />
+                    )}
+                    <span>
+                      {isPlaying
+                        ? (lang === 'ga' ? 'Ag seinm...' : 'Playing...')
+                        : (lang === 'ga' ? 'Éist (Uladh)' : 'Listen')}
+                    </span>
+                  </button>
+                );
+              })()}
             </div>
             <h3 className="text-lg font-medium text-slate-800">
               {question.text[lang]}

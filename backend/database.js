@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
+import { generateQuestionAudio } from './ttsService.js';
 
 const backendDirectory = path.dirname(fileURLToPath(import.meta.url));
 const databasePath = process.env.DATABASE_PATH || path.join(backendDirectory, 'data', 'edumark.sqlite');
@@ -67,6 +68,8 @@ function initializeSQLite() {
       image_en TEXT,
       image_ga TEXT,
       mark_scheme_image TEXT,
+      audio_url_en TEXT,
+      audio_url_ga TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
@@ -94,6 +97,8 @@ function initializeSQLite() {
   try { db.exec('ALTER TABLE questions ADD COLUMN image_en TEXT'); } catch {}
   try { db.exec('ALTER TABLE questions ADD COLUMN image_ga TEXT'); } catch {}
   try { db.exec('ALTER TABLE questions ADD COLUMN mark_scheme_image TEXT'); } catch {}
+  try { db.exec('ALTER TABLE questions ADD COLUMN audio_url_en TEXT'); } catch {}
+  try { db.exec('ALTER TABLE questions ADD COLUMN audio_url_ga TEXT'); } catch {}
   try { db.exec('ALTER TABLE submissions ADD COLUMN amended_at TEXT'); } catch {}
   try { db.exec('ALTER TABLE submissions ADD COLUMN teacher_notes TEXT'); } catch {}
   try { db.exec('ALTER TABLE feedbacks ADD COLUMN student_image TEXT'); } catch {}
@@ -421,7 +426,8 @@ export function getAssessments() {
             text: { en: q.text_en, ga: q.text_ga },
             maxMarks: q.max_marks,
             image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
-            markSchemeImage: q.mark_scheme_image || undefined
+            markSchemeImage: q.mark_scheme_image || undefined,
+            audioUrl: (q.audio_url_en || q.audio_url_ga) ? { en: q.audio_url_en || undefined, ga: q.audio_url_ga || undefined } : undefined
           };
           if (q.type === 'mcq') {
             item.options = q.options;
@@ -452,7 +458,8 @@ export function getAssessments() {
           text: { en: q.text_en, ga: q.text_ga },
           maxMarks: q.max_marks,
           image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
-          markSchemeImage: q.mark_scheme_image || undefined
+          markSchemeImage: q.mark_scheme_image || undefined,
+          audioUrl: (q.audio_url_en || q.audio_url_ga) ? { en: q.audio_url_en || undefined, ga: q.audio_url_ga || undefined } : undefined
         };
         if (q.type === 'mcq') {
           item.options = JSON.parse(q.options_json);
@@ -473,57 +480,72 @@ export function getAssessments() {
   }
 }
 
-export function createAssessment(assessment) {
+export async function createAssessment(assessment) {
   if (usePostgreSQL) {
-    return pool.connect().then(async (client) => {
-      try {
-        await client.query('BEGIN');
-        await client.query(
-          `INSERT INTO assessments (id, title_en, title_ga, description_en, description_ga)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [assessment.id, assessment.title.en, assessment.title.ga, assessment.description.en, assessment.description.ga]
-        );
-        for (let i = 0; i < assessment.questions.length; i++) {
-          const q = assessment.questions[i];
-          await client.query(
-            `INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options, correct_answer_index, mark_scheme_en, mark_scheme_ga, image_en, image_ga, mark_scheme_image, sort_order)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-            [
-              q.id,
-              assessment.id,
-              q.type,
-              q.text?.en ?? q.text,
-              q.text?.ga ?? q.text,
-              q.maxMarks,
-              q.type === 'mcq' ? JSON.stringify(q.options) : null,
-              q.type === 'mcq' ? q.correctAnswerIndex : null,
-              q.type === 'written' ? q.markScheme?.en : null,
-              q.type === 'written' ? q.markScheme?.ga : null,
-              q.image?.en || null,
-              q.image?.ga || null,
-              q.markSchemeImage || null,
-              i
-            ]
-          );
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query(
+        `INSERT INTO assessments (id, title_en, title_ga, description_en, description_ga)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [assessment.id, assessment.title.en, assessment.title.ga, assessment.description.en, assessment.description.ga]
+      );
+      for (let i = 0; i < assessment.questions.length; i++) {
+        const q = assessment.questions[i];
+        let audioUrlEn = q.audioUrl?.en || null;
+        let audioUrlGa = q.audioUrl?.ga || null;
+
+        if (!audioUrlEn && !audioUrlGa) {
+          try {
+            const generated = await generateQuestionAudio(q);
+            audioUrlEn = generated.audioUrlEn;
+            audioUrlGa = generated.audioUrlGa;
+            q.audioUrl = { en: audioUrlEn || undefined, ga: audioUrlGa || undefined };
+          } catch (e) {
+            console.warn(`[Database] Audio pre-generation error for question ${q.id}:`, e.message);
+          }
         }
-        await client.query('COMMIT');
-        return assessment;
-      } catch (err) {
-        await client.query('ROLLBACK');
-        console.error('[Database] createAssessment error:', err);
-        throw err;
-      } finally {
-        client.release();
+
+        await client.query(
+          `INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options, correct_answer_index, mark_scheme_en, mark_scheme_ga, image_en, image_ga, mark_scheme_image, audio_url_en, audio_url_ga, sort_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+          [
+            q.id,
+            assessment.id,
+            q.type,
+            q.text?.en ?? q.text,
+            q.text?.ga ?? q.text,
+            q.maxMarks,
+            q.type === 'mcq' ? JSON.stringify(q.options) : null,
+            q.type === 'mcq' ? q.correctAnswerIndex : null,
+            q.type === 'written' ? q.markScheme?.en : null,
+            q.type === 'written' ? q.markScheme?.ga : null,
+            q.image?.en || null,
+            q.image?.ga || null,
+            q.markSchemeImage || null,
+            audioUrlEn,
+            audioUrlGa,
+            i
+          ]
+        );
       }
-    });
+      await client.query('COMMIT');
+      return assessment;
+    } catch (err) {
+      await client.query('ROLLBACK');
+      console.error('[Database] createAssessment error:', err);
+      throw err;
+    } finally {
+      client.release();
+    }
   } else {
     const insertAssess = db.prepare(`
       INSERT INTO assessments (id, title_en, title_ga, description_en, description_ga)
       VALUES (@id, @title_en, @title_ga, @description_en, @description_ga)
     `);
     const insertQuestion = db.prepare(`
-      INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options_json, correct_answer_index, mark_scheme_en, mark_scheme_ga, image_en, image_ga, mark_scheme_image, sort_order)
-      VALUES (@id, @assessment_id, @type, @text_en, @text_ga, @max_marks, @options_json, @correct_answer_index, @mark_scheme_en, @mark_scheme_ga, @image_en, @image_ga, @mark_scheme_image, @sort_order)
+      INSERT INTO questions (id, assessment_id, type, text_en, text_ga, max_marks, options_json, correct_answer_index, mark_scheme_en, mark_scheme_ga, image_en, image_ga, mark_scheme_image, audio_url_en, audio_url_ga, sort_order)
+      VALUES (@id, @assessment_id, @type, @text_en, @text_ga, @max_marks, @options_json, @correct_answer_index, @mark_scheme_en, @mark_scheme_ga, @image_en, @image_ga, @mark_scheme_image, @audio_url_en, @audio_url_ga, @sort_order)
     `);
     
     const runTransaction = db.transaction((assess, questions) => {
@@ -540,8 +562,8 @@ export function createAssessment(assessment) {
           id: q.id,
           assessment_id: assess.id,
           type: q.type,
-          text_en: q.text.en,
-          text_ga: q.text.ga,
+          text_en: q.text?.en ?? q.text,
+          text_ga: q.text?.ga ?? q.text,
           max_marks: q.maxMarks,
           options_json: q.type === 'mcq' ? JSON.stringify(q.options) : null,
           correct_answer_index: q.type === 'mcq' ? q.correctAnswerIndex : null,
@@ -550,15 +572,37 @@ export function createAssessment(assessment) {
           image_en: q.image?.en || null,
           image_ga: q.image?.ga || null,
           mark_scheme_image: q.markSchemeImage || null,
+          audio_url_en: q.audioUrl?.en || null,
+          audio_url_ga: q.audioUrl?.ga || null,
           sort_order: i
         });
       }
     });
 
     runTransaction(assessment, assessment.questions);
+
+    // Asynchronously generate audio in background for questions missing it
+    (async () => {
+      const updateStmt = db.prepare('UPDATE questions SET audio_url_en = ?, audio_url_ga = ? WHERE id = ?');
+      for (const q of assessment.questions) {
+        if (!q.audioUrl?.en && !q.audioUrl?.ga) {
+          try {
+            const generated = await generateQuestionAudio(q);
+            if (generated.audioUrlEn || generated.audioUrlGa) {
+              q.audioUrl = { en: generated.audioUrlEn || undefined, ga: generated.audioUrlGa || undefined };
+              updateStmt.run(generated.audioUrlEn || null, generated.audioUrlGa || null, q.id);
+            }
+          } catch (e) {
+            console.warn(`[Database] Audio pre-generation error for question ${q.id}:`, e.message);
+          }
+        }
+      }
+    })().catch(() => {});
+
     return assessment;
   }
 }
+
 
 export function listSubmissions(studentId = null) {
   if (usePostgreSQL) {

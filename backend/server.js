@@ -13,6 +13,7 @@ import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createToken, requireAuth } from './auth.js';
 import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, deleteSubmission, deleteUser, usePostgreSQL } from './database.js';
+import { getFromR2, generateQuestionAudio } from './ttsService.js';
 
 const app = express();
 app.use(express.json({limit: process?.env?.API_PAYLOAD_MAX_SIZE || "50mb"}));
@@ -337,6 +338,43 @@ app.post('/api/assessments', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('Create assessment error:', err);
     return res.status(500).json({ error: err.message || 'Internal server error creating assessment.' });
+  }
+});
+
+// Stream audio directly from Cloudflare R2
+app.get('/api/audio/{*key}', async (req, res) => {
+  try {
+    const rawKey = req.params.key || req.params[0] || '';
+    const key = decodeURIComponent(Array.isArray(rawKey) ? rawKey.join('/') : rawKey);
+    const r2Obj = await getFromR2(key);
+    if (!r2Obj || !r2Obj.Body) {
+      return res.status(404).send('Audio file not found.');
+    }
+    res.setHeader('Content-Type', r2Obj.ContentType || 'audio/mpeg');
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    if (r2Obj.ContentLength) {
+      res.setHeader('Content-Length', r2Obj.ContentLength);
+    }
+    r2Obj.Body.pipe(res);
+  } catch (err) {
+    console.error('Audio streaming error:', err);
+    res.status(500).send('Error streaming audio.');
+  }
+});
+
+// Generate or backfill question audio on demand
+app.post('/api/questions/:id/generate-audio', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { textEn, textGa } = req.body;
+  try {
+    const generated = await generateQuestionAudio({
+      id,
+      text: { en: textEn, ga: textGa },
+    });
+    return res.json(generated);
+  } catch (err) {
+    console.error('On-demand audio generation error:', err);
+    return res.status(500).json({ error: err.message });
   }
 });
 

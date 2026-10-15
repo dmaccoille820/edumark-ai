@@ -27,6 +27,10 @@ export interface Question {
     ga?: string;
   };
   markSchemeImage?: string;
+  audioUrl?: {
+    en?: string;
+    ga?: string;
+  };
 }
 
 export interface Assessment {
