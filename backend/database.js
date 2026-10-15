@@ -939,6 +939,41 @@ export function updateAssessment(id, { titleEn, titleGa, descEn, descGa }) {
   }
 }
 
+export async function updateQuestionAudio(id, { audioUrlEn, audioUrlGa }) {
+  if (usePostgreSQL) {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+    if (audioUrlEn !== undefined) {
+      fields.push(`audio_url_en = $${idx++}`);
+      values.push(audioUrlEn);
+    }
+    if (audioUrlGa !== undefined) {
+      fields.push(`audio_url_ga = $${idx++}`);
+      values.push(audioUrlGa);
+    }
+    if (fields.length > 0) {
+      values.push(id);
+      await pool.query(`UPDATE questions SET ${fields.join(', ')} WHERE id = $${idx}`, values);
+    }
+  } else {
+    const fields = [];
+    const values = [];
+    if (audioUrlEn !== undefined) {
+      fields.push(`audio_url_en = ?`);
+      values.push(audioUrlEn);
+    }
+    if (audioUrlGa !== undefined) {
+      fields.push(`audio_url_ga = ?`);
+      values.push(audioUrlGa);
+    }
+    if (fields.length > 0) {
+      values.push(id);
+      db.prepare(`UPDATE questions SET ${fields.join(', ')} WHERE id = ?`).run(...values);
+    }
+  }
+}
+
 export function deleteAssessment(id) {
   if (usePostgreSQL) {
     return pool.query('DELETE FROM assessments WHERE id = $1', [id]).then(res => {

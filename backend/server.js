@@ -12,7 +12,7 @@ import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createToken, requireAuth } from './auth.js';
-import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, deleteSubmission, deleteUser, usePostgreSQL } from './database.js';
+import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, updateQuestionAudio, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, deleteSubmission, deleteUser, usePostgreSQL } from './database.js';
 import { getFromR2, generateQuestionAudio } from './ttsService.js';
 
 const app = express();
@@ -371,9 +371,67 @@ app.post('/api/questions/:id/generate-audio', requireAuth, async (req, res) => {
       id,
       text: { en: textEn, ga: textGa },
     });
+    await updateQuestionAudio(id, {
+      audioUrlEn: generated.audioUrlEn,
+      audioUrlGa: generated.audioUrlGa,
+    });
     return res.json(generated);
   } catch (err) {
     console.error('On-demand audio generation error:', err);
+    return res.status(500).json({ error: err.message });
+  }
+});
+
+// Generate or backfill audio for all questions in an assessment
+app.post('/api/assessments/:id/generate-audio', requireAuth, async (req, res) => {
+  const { id } = req.params;
+  const { force } = req.body || {};
+  try {
+    const assessments = await getAssessments();
+    const assessment = assessments.find(a => a.id === id);
+    if (!assessment) {
+      return res.status(404).json({ error: 'Assessment not found.' });
+    }
+
+    const results = [];
+    for (let i = 0; i < assessment.questions.length; i++) {
+      const q = assessment.questions[i];
+      // Only generate if missing or forced
+      const needsEn = force || !q.audioUrl?.en;
+      const needsGa = force || !q.audioUrl?.ga || q.audioUrl?.ga.endsWith('.mp3'); // fix old broken .mp3 ga files
+
+      if (needsEn || needsGa) {
+        console.log(`[Audio Generator] Generating audio for question ${i + 1}/${assessment.questions.length} (${q.id})...`);
+        const textEn = needsEn ? (q.text?.en ?? (typeof q.text === 'string' ? q.text : null)) : null;
+        const textGa = needsGa ? (q.text?.ga ?? (typeof q.text === 'string' ? q.text : null)) : null;
+
+        const generated = await generateQuestionAudio({
+          id: q.id,
+          text: { en: textEn, ga: textGa },
+        });
+
+        const updates = {};
+        if (needsEn && generated.audioUrlEn) updates.audioUrlEn = generated.audioUrlEn;
+        if (needsGa && generated.audioUrlGa) updates.audioUrlGa = generated.audioUrlGa;
+
+        if (Object.keys(updates).length > 0) {
+          await updateQuestionAudio(q.id, updates);
+          results.push({ id: q.id, ...updates });
+        }
+
+        // Pacing delay between questions to avoid Abair concurrency limit
+        await new Promise(r => setTimeout(r, 600));
+      }
+    }
+
+    return res.json({
+      success: true,
+      assessmentId: id,
+      updatedCount: results.length,
+      totalQuestions: assessment.questions.length,
+    });
+  } catch (err) {
+    console.error('Assessment audio generation error:', err);
     return res.status(500).json({ error: err.message });
   }
 });
