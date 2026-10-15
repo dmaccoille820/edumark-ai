@@ -102,47 +102,73 @@ export async function generateIrishAudio(textGa, questionId) {
     return null;
   }
 
-  try {
-    const res = await fetch('https://api.abair.ie/v4/synthesis', {
-      method: 'POST',
-      headers: {
-        'abair-api-key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        input: textGa,
-        voice: 'anb.piper', // Uladh / Ulster female voice (Áine)
-        speed: 1,
-      }),
-    });
+  // Clean / sanitize text: remove diagram/figure tokens like [DFD image]
+  const cleanText = (textGa || '').replace(/\[.*?\]/g, '').trim();
+  if (!cleanText) return null;
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`[TTS] Abair API error (${res.status}):`, errText);
-      return null;
+  // Retry with backoff to handle Abair gateway concurrency / 500 limits
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    try {
+      const res = await fetch('https://api.abair.ie/v4/synthesis', {
+        method: 'POST',
+        headers: {
+          'abair-api-key': apiKey,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          input: cleanText,
+          voice: 'anb.piper', // Uladh / Ulster female voice (Áine)
+          speed: 1,
+        }),
+      });
+
+      if (!res.ok) {
+        const errText = await res.text();
+        console.warn(`[TTS] Abair API error (attempt ${attempt}/3, status ${res.status}):`, errText);
+        if (attempt < 3) {
+          await new Promise(r => setTimeout(r, 600 * attempt));
+          continue;
+        }
+        return null;
+      }
+
+      const data = await res.json();
+      if (!data?.audioContent) {
+        console.error(`[TTS] Abair returned no audioContent for question ${questionId}`);
+        return null;
+      }
+
+      // Abair v4 returns base64-encoded WAV binary data in audioContent
+      const buffer = Buffer.from(data.audioContent, 'base64');
+      const key = `audio/questions/${questionId}_ga.wav`;
+
+      return await uploadToR2(buffer, key, 'audio/wav');
+    } catch (err) {
+      console.warn(`[TTS] Irish audio attempt ${attempt} failed for question ${questionId}:`, err.message);
+      if (attempt < 3) {
+        await new Promise(r => setTimeout(r, 600 * attempt));
+      } else {
+        return null;
+      }
     }
-
-    const arrayBuffer = await res.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    const key = `audio/questions/${questionId}_ga.mp3`;
-
-    return await uploadToR2(buffer, key, 'audio/mpeg');
-  } catch (err) {
-    console.error(`[TTS] Irish audio generation failed for question ${questionId}:`, err);
-    return null;
   }
+  return null;
 }
+
 
 /**
  * Synthesize English audio using Google Cloud Text-to-Speech
  */
 export async function generateEnglishAudio(textEn, questionId) {
+  const cleanText = (textEn || '').replace(/\[.*?\]/g, '').trim();
+  if (!cleanText) return null;
+
   try {
     let client = googleTtsClient || new textToSpeech.TextToSpeechClient();
     let response;
     try {
       [response] = await client.synthesizeSpeech({
-        input: { text: textEn },
+        input: { text: cleanText },
         voice: {
           languageCode: 'en-GB',
           name: 'en-GB-Neural2-A', // High quality Neural Female
