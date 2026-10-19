@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [submissions, setSubmissions] = useState<Submission[]>([]);
   const [students, setStudents] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [gradingProgress, setGradingProgress] = useState<{ current: number; total: number } | null>(null);
 
   useEffect(() => {
     if (!currentUser) {
@@ -93,6 +94,13 @@ const App: React.FC = () => {
     const submissionId = `sub_${Date.now()}`;
     const feedback: Record<string, AnswerFeedback> = {};
     let totalScore = 0;
+    let needsManualReview = false;
+
+    // Filter written questions to track grading progress and pacing
+    const writtenToGrade = currentAssessment.questions.filter(
+      q => q.type === 'written' && (answers[q.id] || '').trim() !== ''
+    );
+    let writtenIndex = 0;
 
     // Process each question
     for (const question of currentAssessment.questions) {
@@ -122,19 +130,40 @@ const App: React.FC = () => {
              commentEn: 'No answer provided.' 
            };
         } else {
+           writtenIndex++;
+           setGradingProgress({ current: writtenIndex, total: writtenToGrade.length });
+
+           // Inter-question pacing: wait 1.5s between questions to avoid hitting RPM quotas
+           if (writtenIndex > 1) {
+             const pacingDelay = process.env.NODE_ENV === 'test' ? 0 : 1500;
+             if (pacingDelay > 0) {
+               await new Promise(resolve => setTimeout(resolve, pacingDelay));
+             }
+           }
+
            const aiFeedback = await gradeWrittenAnswer(question, studentAnswer);
            feedback[question.id] = aiFeedback;
            totalScore += aiFeedback.score;
+
+           if (
+             aiFeedback.commentEn.includes('Error during automated grading') ||
+             aiFeedback.commentEn.includes('temporarily delayed') ||
+             aiFeedback.commentEn.includes('manual review')
+           ) {
+             needsManualReview = true;
+           }
         }
       }
     }
+
+    setGradingProgress(null);
 
     const newSubmission: Submission = {
       id: submissionId,
       studentId: currentUser.id,
       assessmentId: currentAssessment.id,
       answers,
-      status: 'graded',
+      status: needsManualReview ? 'provisional' : 'graded',
       totalScore,
       feedback,
       submittedAt: new Date().toISOString(),
@@ -203,7 +232,10 @@ const App: React.FC = () => {
       )}
 
       {appState === 'grading' && (
-        <GradingOverlay />
+        <GradingOverlay
+          current={gradingProgress?.current}
+          total={gradingProgress?.total}
+        />
       )}
 
       {appState === 'results' && currentAssessment && currentSubmission && (

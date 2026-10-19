@@ -5,6 +5,45 @@ import { Question, AnswerFeedback } from '../types';
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY, vertexai: true });
 
 
+// Helper to detect rate limit (429 / RESOURCE_EXHAUSTED) errors
+const isRateLimitedError = (error: any): boolean => {
+  if (!error) return false;
+  if (error.status === 429 || error.code === 429) return true;
+  if (error.error?.code === 429 || error.error?.status === 'RESOURCE_EXHAUSTED') return true;
+  const str = typeof error === 'string' ? error : (error.message || JSON.stringify(error));
+  return /429|resource_exhausted|quota|too many requests/i.test(str);
+};
+
+const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+/**
+ * Executes an AI call with automatic retry and exponential backoff for rate limit (429) errors.
+ */
+async function callWithRetry<T>(
+  fn: () => Promise<T>,
+  retries = 3,
+  baseDelay = process.env.NODE_ENV === 'test' ? 10 : 2000,
+  factor = 2
+): Promise<T> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await fn();
+    } catch (error: any) {
+      attempt++;
+      if (attempt > retries || !isRateLimitedError(error)) {
+        throw error;
+      }
+      const jitter = Math.random() * 800;
+      const delay = baseDelay * Math.pow(factor, attempt - 1) + jitter;
+      console.warn(
+        `[AI Service] Rate limited (429 / RESOURCE_EXHAUSTED). Retrying attempt ${attempt}/${retries} in ${Math.round(delay)}ms...`
+      );
+      await wait(delay);
+    }
+  }
+}
+
 export const gradeWrittenAnswer = async (
   question: Question,
   studentAnswer: string
@@ -31,32 +70,34 @@ export const gradeWrittenAnswer = async (
   `;
 
   try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: prompt,
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            score: {
-              type: Type.INTEGER,
-              description: `The awarded marks, from 0 to ${question.maxMarks}.`,
+    const response = await callWithRetry(async () => {
+      return await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              score: {
+                type: Type.INTEGER,
+                description: `The awarded marks, from 0 to ${question.maxMarks}.`,
+              },
+              feedbackIrish: {
+                type: Type.STRING,
+                description: 'Constructive feedback in Irish (Gaeilge) explaining the score.',
+              },
+              feedbackEnglish: {
+                type: Type.STRING,
+                description: 'Constructive feedback in English explaining the score.',
+              },
             },
-            feedbackIrish: {
-              type: Type.STRING,
-              description: 'Constructive feedback in Irish (Gaeilge) explaining the score.',
-            },
-            feedbackEnglish: {
-              type: Type.STRING,
-              description: 'Constructive feedback in English explaining the score.',
-            },
+            required: ['score', 'feedbackIrish', 'feedbackEnglish'],
           },
-          required: ['score', 'feedbackIrish', 'feedbackEnglish'],
+          temperature: 0.1, // Low temperature for more deterministic grading
         },
-        temperature: 0.1, // Low temperature for more deterministic grading
-      },
-    });
+      });
+    }, 3);
 
     if (!response.text) {
       throw new Error('No text returned from the grading model.');
@@ -78,10 +119,18 @@ export const gradeWrittenAnswer = async (
     };
   } catch (error: any) {
     console.error('Error grading answer with AI:', error);
+    const isQuota = isRateLimitedError(error);
+    const commentEn = isQuota
+      ? 'Automated grading is temporarily delayed due to high server traffic. Answer flagged for teacher review.'
+      : `Error during automated grading: ${error.message || 'Unknown error'}. Please request manual review.`;
+    const commentGa = isQuota
+      ? 'Tá moill ar an ngrádú uathoibrithe mar gheall ar thrácht ard ar an bhfreastalaí. Marcáilte le haghaidh athbhreithniú múinteora.'
+      : 'Earráid le linn grádaithe uathoibrithe. Iarr athbhreithniú láimhe le do thoil.';
+
     return {
       score: 0,
-      commentGa: 'Earráid le linn grádaithe uathoibrithe. Iarr athbhreithniú láimhe le do thoil.',
-      commentEn: `Error during automated grading: ${error.message || 'Unknown error'}. Please request manual review.`,
+      commentGa,
+      commentEn,
     };
   }
 };
@@ -106,41 +155,31 @@ export const generateAssessmentFromPdfs = async (
 
   try {
     console.log("Sending PDF generation request to Gemini...");
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        role: 'user',
-        parts: [
-          { inlineData: { mimeType: 'application/pdf', data: enPdfBase64 } },
-          { inlineData: { mimeType: 'application/pdf', data: gaPdfBase64 } },
-          { inlineData: { mimeType: 'application/pdf', data: msPdfBase64 } },
-          { text: prompt }
-        ]
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  id: { type: Type.STRING, description: 'A unique ID like q1, q2, etc.' },
-                  type: { type: Type.STRING, description: 'Must be exactly "mcq" or "written"' },
-                  text: {
-                    type: Type.OBJECT,
-                    properties: {
-                      en: { type: Type.STRING },
-                      ga: { type: Type.STRING }
-                    },
-                    required: ['en', 'ga']
-                  },
-                  maxMarks: { type: Type.INTEGER },
-                  options: {
-                    type: Type.ARRAY,
-                    items: {
+    const response = await callWithRetry(async () => {
+      return await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: {
+          role: 'user',
+          parts: [
+            { inlineData: { mimeType: 'application/pdf', data: enPdfBase64 } },
+            { inlineData: { mimeType: 'application/pdf', data: gaPdfBase64 } },
+            { inlineData: { mimeType: 'application/pdf', data: msPdfBase64 } },
+            { text: prompt }
+          ]
+        },
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    id: { type: Type.STRING, description: 'A unique ID like q1, q2, etc.' },
+                    type: { type: Type.STRING, description: 'Must be exactly "mcq" or "written"' },
+                    text: {
                       type: Type.OBJECT,
                       properties: {
                         en: { type: Type.STRING },
@@ -148,27 +187,39 @@ export const generateAssessmentFromPdfs = async (
                       },
                       required: ['en', 'ga']
                     },
-                    description: 'Only include if type is "mcq"'
-                  },
-                  correctAnswerIndex: { type: Type.INTEGER, description: 'Only include if type is "mcq"' },
-                  markScheme: {
-                    type: Type.OBJECT,
-                    properties: {
-                      en: { type: Type.STRING },
-                      ga: { type: Type.STRING }
+                    maxMarks: { type: Type.INTEGER },
+                    options: {
+                      type: Type.ARRAY,
+                      items: {
+                        type: Type.OBJECT,
+                        properties: {
+                          en: { type: Type.STRING },
+                          ga: { type: Type.STRING }
+                        },
+                        required: ['en', 'ga']
+                      },
+                      description: 'Only include if type is "mcq"'
                     },
-                    description: 'Only include if type is "written"'
-                  }
-                },
-                required: ['id', 'type', 'text', 'maxMarks']
+                    correctAnswerIndex: { type: Type.INTEGER, description: 'Only include if type is "mcq"' },
+                    markScheme: {
+                      type: Type.OBJECT,
+                      properties: {
+                        en: { type: Type.STRING },
+                        ga: { type: Type.STRING }
+                      },
+                      description: 'Only include if type is "written"'
+                    }
+                  },
+                  required: ['id', 'type', 'text', 'maxMarks']
+                }
               }
-            }
+            },
+            required: ['questions']
           },
-          required: ['questions']
+          temperature: 0.2,
         },
-        temperature: 0.2,
-      },
-    });
+      });
+    }, 3, 3000);
 
     if (!response.text) {
       throw new Error('No text returned from the assessment generation model.');
@@ -281,30 +332,32 @@ export const generateAssessmentFromMultipleFactFiles = async (
 
   try {
     console.log(`Sending ${pairCount} FactFile pair(s) to Gemini for assessment generation...`);
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: {
-        role: 'user',
-        parts: [
-          ...pdfParts,
-          { text: prompt }
-        ]
-      },
-      config: {
-        responseMimeType: 'application/json',
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: questionSchema
-            }
-          },
-          required: ['questions']
+    const response = await callWithRetry(async () => {
+      return await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: {
+          role: 'user',
+          parts: [
+            ...pdfParts,
+            { text: prompt }
+          ]
         },
-        temperature: 0.2,
-      },
-    });
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: {
+                type: Type.ARRAY,
+                items: questionSchema
+              }
+            },
+            required: ['questions']
+          },
+          temperature: 0.2,
+        },
+      });
+    }, 3, 3000);
 
     if (!response.text) {
       throw new Error('No text returned from the assessment generation model.');
