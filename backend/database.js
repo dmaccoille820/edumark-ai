@@ -939,6 +939,204 @@ export function updateAssessment(id, { titleEn, titleGa, descEn, descGa }) {
   }
 }
 
+export async function updateQuestion(id, updates) {
+  const {
+    text,
+    textEn,
+    textGa,
+    maxMarks,
+    markScheme,
+    markSchemeEn,
+    markSchemeGa,
+    options,
+    correctAnswerIndex,
+    image,
+    imageEn,
+    imageGa,
+    markSchemeImage,
+    audioUrl,
+    audioUrlEn,
+    audioUrlGa
+  } = updates;
+
+  const resolvedTextEn = textEn !== undefined ? textEn : (text?.en !== undefined ? text.en : undefined);
+  const resolvedTextGa = textGa !== undefined ? textGa : (text?.ga !== undefined ? text.ga : undefined);
+  const resolvedMarkSchemeEn = markSchemeEn !== undefined ? markSchemeEn : (markScheme?.en !== undefined ? markScheme.en : undefined);
+  const resolvedMarkSchemeGa = markSchemeGa !== undefined ? markSchemeGa : (markScheme?.ga !== undefined ? markScheme.ga : undefined);
+  const resolvedImageEn = imageEn !== undefined ? imageEn : (image?.en !== undefined ? image.en : undefined);
+  const resolvedImageGa = imageGa !== undefined ? imageGa : (image?.ga !== undefined ? image.ga : undefined);
+  const resolvedAudioUrlEn = audioUrlEn !== undefined ? audioUrlEn : (audioUrl?.en !== undefined ? audioUrl.en : undefined);
+  const resolvedAudioUrlGa = audioUrlGa !== undefined ? audioUrlGa : (audioUrl?.ga !== undefined ? audioUrl.ga : undefined);
+
+  if (usePostgreSQL) {
+    const fields = [];
+    const values = [];
+    let idx = 1;
+
+    if (resolvedTextEn !== undefined) {
+      fields.push(`text_en = $${idx++}`);
+      values.push(resolvedTextEn);
+    }
+    if (resolvedTextGa !== undefined) {
+      fields.push(`text_ga = $${idx++}`);
+      values.push(resolvedTextGa);
+    }
+    if (maxMarks !== undefined) {
+      fields.push(`max_marks = $${idx++}`);
+      values.push(Number(maxMarks));
+    }
+    if (resolvedMarkSchemeEn !== undefined) {
+      fields.push(`mark_scheme_en = $${idx++}`);
+      values.push(resolvedMarkSchemeEn);
+    }
+    if (resolvedMarkSchemeGa !== undefined) {
+      fields.push(`mark_scheme_ga = $${idx++}`);
+      values.push(resolvedMarkSchemeGa);
+    }
+    if (options !== undefined) {
+      fields.push(`options = $${idx++}::jsonb`);
+      values.push(JSON.stringify(options));
+    }
+    if (correctAnswerIndex !== undefined) {
+      fields.push(`correct_answer_index = $${idx++}`);
+      values.push(correctAnswerIndex !== null ? Number(correctAnswerIndex) : null);
+    }
+    if (resolvedImageEn !== undefined) {
+      fields.push(`image_en = $${idx++}`);
+      values.push(resolvedImageEn);
+    }
+    if (resolvedImageGa !== undefined) {
+      fields.push(`image_ga = $${idx++}`);
+      values.push(resolvedImageGa);
+    }
+    if (markSchemeImage !== undefined) {
+      fields.push(`mark_scheme_image = $${idx++}`);
+      values.push(markSchemeImage);
+    }
+    if (resolvedAudioUrlEn !== undefined) {
+      fields.push(`audio_url_en = $${idx++}`);
+      values.push(resolvedAudioUrlEn);
+    }
+    if (resolvedAudioUrlGa !== undefined) {
+      fields.push(`audio_url_ga = $${idx++}`);
+      values.push(resolvedAudioUrlGa);
+    }
+
+    if (fields.length > 0) {
+      values.push(id);
+      const res = await pool.query(
+        `UPDATE questions SET ${fields.join(', ')} WHERE id = $${idx} RETURNING *`,
+        values
+      );
+      if (res.rowCount === 0) throw new Error(`Question ${id} not found`);
+      const q = res.rows[0];
+      return {
+        id: q.id,
+        assessmentId: q.assessment_id,
+        type: q.type,
+        text: { en: q.text_en, ga: q.text_ga },
+        maxMarks: q.max_marks,
+        image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
+        markSchemeImage: q.mark_scheme_image || undefined,
+        audioUrl: (q.audio_url_en || q.audio_url_ga) ? { en: q.audio_url_en || undefined, ga: q.audio_url_ga || undefined } : undefined,
+        options: q.type === 'mcq' ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : undefined,
+        correctAnswerIndex: q.type === 'mcq' ? q.correct_answer_index : undefined,
+        markScheme: q.type === 'written' ? { en: q.mark_scheme_en, ga: q.mark_scheme_ga } : undefined,
+      };
+    } else {
+      const res = await pool.query('SELECT * FROM questions WHERE id = $1', [id]);
+      if (res.rowCount === 0) throw new Error(`Question ${id} not found`);
+      const q = res.rows[0];
+      return {
+        id: q.id,
+        assessmentId: q.assessment_id,
+        type: q.type,
+        text: { en: q.text_en, ga: q.text_ga },
+        maxMarks: q.max_marks,
+        image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
+        markSchemeImage: q.mark_scheme_image || undefined,
+        audioUrl: (q.audio_url_en || q.audio_url_ga) ? { en: q.audio_url_en || undefined, ga: q.audio_url_ga || undefined } : undefined,
+        options: q.type === 'mcq' ? (typeof q.options === 'string' ? JSON.parse(q.options) : q.options) : undefined,
+        correctAnswerIndex: q.type === 'mcq' ? q.correct_answer_index : undefined,
+        markScheme: q.type === 'written' ? { en: q.mark_scheme_en, ga: q.mark_scheme_ga } : undefined,
+      };
+    }
+  } else {
+    const fields = [];
+    const values = {};
+    if (resolvedTextEn !== undefined) {
+      fields.push('text_en = @text_en');
+      values.text_en = resolvedTextEn;
+    }
+    if (resolvedTextGa !== undefined) {
+      fields.push('text_ga = @text_ga');
+      values.text_ga = resolvedTextGa;
+    }
+    if (maxMarks !== undefined) {
+      fields.push('max_marks = @max_marks');
+      values.max_marks = Number(maxMarks);
+    }
+    if (resolvedMarkSchemeEn !== undefined) {
+      fields.push('mark_scheme_en = @mark_scheme_en');
+      values.mark_scheme_en = resolvedMarkSchemeEn;
+    }
+    if (resolvedMarkSchemeGa !== undefined) {
+      fields.push('mark_scheme_ga = @mark_scheme_ga');
+      values.mark_scheme_ga = resolvedMarkSchemeGa;
+    }
+    if (options !== undefined) {
+      fields.push('options_json = @options_json');
+      values.options_json = JSON.stringify(options);
+    }
+    if (correctAnswerIndex !== undefined) {
+      fields.push('correct_answer_index = @correct_answer_index');
+      values.correct_answer_index = correctAnswerIndex !== null ? Number(correctAnswerIndex) : null;
+    }
+    if (resolvedImageEn !== undefined) {
+      fields.push('image_en = @image_en');
+      values.image_en = resolvedImageEn;
+    }
+    if (resolvedImageGa !== undefined) {
+      fields.push('image_ga = @image_ga');
+      values.image_ga = resolvedImageGa;
+    }
+    if (markSchemeImage !== undefined) {
+      fields.push('mark_scheme_image = @mark_scheme_image');
+      values.mark_scheme_image = markSchemeImage;
+    }
+    if (resolvedAudioUrlEn !== undefined) {
+      fields.push('audio_url_en = @audio_url_en');
+      values.audio_url_en = resolvedAudioUrlEn;
+    }
+    if (resolvedAudioUrlGa !== undefined) {
+      fields.push('audio_url_ga = @audio_url_ga');
+      values.audio_url_ga = resolvedAudioUrlGa;
+    }
+
+    if (fields.length > 0) {
+      values.id = id;
+      const info = db.prepare(`UPDATE questions SET ${fields.join(', ')} WHERE id = @id`).run(values);
+      if (info.changes === 0) throw new Error(`Question ${id} not found`);
+    }
+
+    const q = db.prepare('SELECT * FROM questions WHERE id = ?').get(id);
+    if (!q) throw new Error(`Question ${id} not found`);
+    return {
+      id: q.id,
+      assessmentId: q.assessment_id,
+      type: q.type,
+      text: { en: q.text_en, ga: q.text_ga },
+      maxMarks: q.max_marks,
+      image: (q.image_en || q.image_ga) ? { en: q.image_en, ga: q.image_ga } : undefined,
+      markSchemeImage: q.mark_scheme_image || undefined,
+      audioUrl: (q.audio_url_en || q.audio_url_ga) ? { en: q.audio_url_en || undefined, ga: q.audio_url_ga || undefined } : undefined,
+      options: q.type === 'mcq' && q.options_json ? JSON.parse(q.options_json) : undefined,
+      correctAnswerIndex: q.type === 'mcq' ? q.correct_answer_index : undefined,
+      markScheme: q.type === 'written' ? { en: q.mark_scheme_en, ga: q.mark_scheme_ga } : undefined,
+    };
+  }
+}
+
 export async function updateQuestionAudio(id, { audioUrlEn, audioUrlGa }) {
   if (usePostgreSQL) {
     const fields = [];

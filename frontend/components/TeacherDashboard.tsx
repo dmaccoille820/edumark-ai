@@ -42,6 +42,7 @@ import {
   exportToDetailedCsv,
   exportToSummaryCsv
 } from '../services/exportService';
+import { QuestionEditorModal } from './QuestionEditorModal';
 
 interface TeacherDashboardProps {
   teacher: User;
@@ -80,6 +81,7 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
   const [isDeletingSubId, setIsDeletingSubId] = useState<string | null>(null);
   const [deletingStudentId, setDeletingStudentId] = useState<string | null>(null);
   const [isDeletingStudentId, setIsDeletingStudentId] = useState<string | null>(null);
+  const [managingQuestionsAssessment, setManagingQuestionsAssessment] = useState<Assessment | null>(null);
 
   // Amendment state
   const [expandedSubId, setExpandedSubId] = useState<string | null>(null);
@@ -1075,10 +1077,19 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
                           </button>
                         </div>
                       </div>
-                      <div className="flex justify-between items-center text-sm mt-auto">
-                        <span className="text-slate-600">{assessment.questions.length} Questions</span>
-                        <span className="font-medium text-primary">{assessmentMaxMarks[assessment.id]} Marks</span>
+                      <div className="flex justify-between items-center text-sm mt-auto pt-2 border-t border-slate-100">
+                        <span className="text-slate-600 font-medium">{assessment.questions.length} Questions</span>
+                        <span className="font-semibold text-primary">{assessmentMaxMarks[assessment.id]} Marks</span>
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => setManagingQuestionsAssessment(assessment)}
+                        className="w-full mt-1.5 py-1.5 px-3 bg-slate-50 hover:bg-green-50 text-slate-700 hover:text-primary text-xs font-semibold rounded-lg border border-slate-200 hover:border-primary/40 flex items-center justify-center gap-1.5 transition-colors"
+                        title="Edit individual questions, answers, and marks"
+                      >
+                        <FileText className="w-3.5 h-3.5 text-primary" />
+                        Edit Questions ({assessment.questions.length})
+                      </button>
                     </>
                   )}
                 </div>
@@ -1505,6 +1516,16 @@ export const TeacherDashboard: React.FC<TeacherDashboardProps> = ({
             </div>
           );
         })()}
+        {managingQuestionsAssessment && (
+          <QuestionEditorModal
+            assessment={managingQuestionsAssessment}
+            onClose={() => setManagingQuestionsAssessment(null)}
+            onAssessmentUpdated={(updated) => {
+              setAssessments(prev => prev.map(a => a.id === updated.id ? updated : a));
+              setManagingQuestionsAssessment(updated);
+            }}
+          />
+        )}
       </main>
     </div>
   );

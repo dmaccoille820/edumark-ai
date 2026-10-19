@@ -12,7 +12,7 @@ import fetch from 'node-fetch';
 import rateLimit from 'express-rate-limit';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createToken, requireAuth } from './auth.js';
-import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, updateQuestionAudio, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, deleteSubmission, deleteUser, usePostgreSQL } from './database.js';
+import { initDb, findUser, listUsers, getAssessments, createAssessment, updateAssessment, updateQuestion, updateQuestionAudio, deleteAssessment, listSubmissions, saveSubmission, updateSubmissionAmendment, deleteSubmission, deleteUser, usePostgreSQL } from './database.js';
 import { getFromR2, generateQuestionAudio } from './ttsService.js';
 
 const app = express();
@@ -433,6 +433,21 @@ app.post('/api/assessments/:id/generate-audio', requireAuth, async (req, res) =>
   } catch (err) {
     console.error('Assessment audio generation error:', err);
     return res.status(500).json({ error: err.message });
+  }
+});
+
+// Update individual question details (teacher only)
+app.patch('/api/questions/:id', requireAuth, async (req, res) => {
+  if (req.user.role !== 'teacher') {
+    return res.status(403).json({ error: 'Only teachers may edit questions.' });
+  }
+  const { id } = req.params;
+  try {
+    const updated = await updateQuestion(id, req.body);
+    return res.json(updated);
+  } catch (err) {
+    console.error('Update question error:', err);
+    return res.status(err.message.includes('not found') ? 404 : 500).json({ error: err.message });
   }
 });
 

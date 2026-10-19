@@ -1,4 +1,4 @@
-import { Submission, User, Assessment } from '../types';
+import { Submission, User, Assessment, Question } from '../types';
 
 const tokenKey = 'edumark.auth.token';
 
@@ -79,6 +79,42 @@ export async function deleteAssessment(id: string): Promise<void> {
     const data = await response.json().catch(() => ({}));
     throw new Error(data.error || 'Failed to delete assessment.');
   }
+}
+
+export interface QuestionPatch {
+  text?: { en: string; ga: string };
+  maxMarks?: number;
+  markScheme?: { en: string; ga: string };
+  options?: { en: string; ga: string }[];
+  correctAnswerIndex?: number;
+  image?: { en?: string; ga?: string };
+  markSchemeImage?: string;
+}
+
+export async function updateQuestion(id: string, patch: QuestionPatch): Promise<Question> {
+  const response = await fetch(`/api/questions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify(patch),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to update question.');
+  }
+  return response.json();
+}
+
+export async function regenerateQuestionAudio(id: string, text: { en: string; ga: string }): Promise<{ audioUrlEn?: string; audioUrlGa?: string }> {
+  const response = await fetch(`/api/questions/${id}/generate-audio`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...authHeaders() },
+    body: JSON.stringify({ textEn: text.en, textGa: text.ga }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || 'Failed to generate question audio.');
+  }
+  return response.json();
 }
 
 export interface AmendmentPayload {
